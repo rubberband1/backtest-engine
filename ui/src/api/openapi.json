@@ -1,0 +1,5372 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "backtest-engine",
+    "description": "Local API: cached data, strategies, backtests, saved runs.",
+    "version": "3.1.0"
+  },
+  "paths": {
+    "/api/symbols": {
+      "get": {
+        "tags": [
+          "data"
+        ],
+        "summary": "Get Symbols",
+        "description": "Broker instruments with their contract specification.",
+        "operationId": "get_symbols_api_symbols_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SymbolListOut"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/symbols/{symbol}/coverage": {
+      "get": {
+        "tags": [
+          "data"
+        ],
+        "summary": "Get Coverage",
+        "description": "What data is cached for this instrument, and how healthy it is.",
+        "operationId": "get_coverage_api_symbols__symbol__coverage_get",
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Symbol"
+            }
+          },
+          {
+            "name": "timeframe",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "M1",
+              "title": "Timeframe"
+            }
+          },
+          {
+            "name": "quality",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "also compute the quality report",
+              "default": true,
+              "title": "Quality"
+            },
+            "description": "also compute the quality report"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CoverageOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/strategies": {
+      "get": {
+        "tags": [
+          "strategies"
+        ],
+        "summary": "List Strategies",
+        "operationId": "list_strategies_api_strategies_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/StrategyOut"
+                  },
+                  "type": "array",
+                  "title": "Response List Strategies Api Strategies Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/strategies/{strategy_id}": {
+      "get": {
+        "tags": [
+          "strategies"
+        ],
+        "summary": "Get Strategy",
+        "operationId": "get_strategy_api_strategies__strategy_id__get",
+        "parameters": [
+          {
+            "name": "strategy_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Strategy Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StrategyOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/strategies/validate": {
+      "post": {
+        "tags": [
+          "strategies"
+        ],
+        "summary": "Validate Strategy",
+        "description": "Validates a spec without saving it. The errors are the human-readable ones.",
+        "operationId": "validate_strategy_api_strategies_validate_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ValidateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidateResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/edge": {
+      "post": {
+        "tags": [
+          "research"
+        ],
+        "summary": "Post Edge",
+        "description": "Gate zero: does the signal beat the spread, before even talking SL/TP?",
+        "operationId": "post_edge_api_edge_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EdgeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EdgeResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/backtest": {
+      "post": {
+        "tags": [
+          "backtest"
+        ],
+        "summary": "Post Backtest",
+        "description": "Launches a backtest. If it takes over two seconds the run_id returns immediately.",
+        "operationId": "post_backtest_api_backtest_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BacktestRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BacktestResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/runs": {
+      "get": {
+        "tags": [
+          "runs"
+        ],
+        "summary": "List Runs",
+        "operationId": "list_runs_api_runs_get",
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Symbol"
+            }
+          },
+          {
+            "name": "strategy_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Strategy Id"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "running",
+                    "done",
+                    "error"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 500,
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RunSummaryOut"
+                  },
+                  "title": "Response List Runs Api Runs Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/runs/{run_id}": {
+      "get": {
+        "tags": [
+          "runs"
+        ],
+        "summary": "Get Run",
+        "operationId": "get_run_api_runs__run_id__get",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunDetailOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "runs"
+        ],
+        "summary": "Delete Run",
+        "operationId": "delete_run_api_runs__run_id__delete",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeleteResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/runs/{run_id}/equity": {
+      "get": {
+        "tags": [
+          "runs"
+        ],
+        "summary": "Get Equity",
+        "description": "Equity curve and drawdown, reduced to ~`points` points.\n\nThe drawdown is computed on the **whole** series and only then are the\npoints reduced, otherwise the minimum would be measured on an already\npruned curve.",
+        "operationId": "get_equity_api_runs__run_id__equity_get",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          },
+          {
+            "name": "points",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 2000,
+              "minimum": 50,
+              "default": 2000,
+              "title": "Points"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EquityOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/runs/{run_id}/trades": {
+      "get": {
+        "tags": [
+          "runs"
+        ],
+        "summary": "Get Trades",
+        "operationId": "get_trades_api_runs__run_id__trades_get",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 500,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "ambiguous_only",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Ambiguous Only"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TradesOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/runs/compare": {
+      "post": {
+        "tags": [
+          "runs"
+        ],
+        "summary": "Compare Runs",
+        "description": "Curves aligned on the same axis and metrics side by side.\n\nThe curves are normalized to 100 at the start of their own period: two\nruns with different initial equity, or over different periods, stay\ncomparable.",
+        "operationId": "compare_runs_api_runs_compare_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CompareRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompareResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/validation/walkforward": {
+      "post": {
+        "tags": [
+          "validation"
+        ],
+        "summary": "Post Walkforward",
+        "description": "Optimize in-sample, apply out-of-sample, one window at a time.",
+        "operationId": "post_walkforward_api_validation_walkforward_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WalkForwardRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalkForwardResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/validation/permutation": {
+      "post": {
+        "tags": [
+          "validation"
+        ],
+        "summary": "Post Permutation",
+        "description": "The real result against random entries and against permuted price paths.",
+        "operationId": "post_permutation_api_validation_permutation_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PermutationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PermutationResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/validation/multiple-testing": {
+      "post": {
+        "tags": [
+          "validation"
+        ],
+        "summary": "Post Multiple Testing",
+        "description": "What the observed Sharpe is worth given how many configurations were tried.",
+        "operationId": "post_multiple_testing_api_validation_multiple_testing_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MultipleTestingRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MultipleTestingResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/validation/tick-resolve": {
+      "post": {
+        "tags": [
+          "validation"
+        ],
+        "summary": "Post Tick Resolve",
+        "description": "Ambiguous trades settled with tick data, or a plain statement that they cannot be.",
+        "operationId": "post_tick_resolve_api_validation_tick_resolve_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TickResolveRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TickResolveResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/batch": {
+      "post": {
+        "tags": [
+          "batch"
+        ],
+        "summary": "Post Batch",
+        "description": "The same spec across many instruments, and whether they agree.",
+        "operationId": "post_batch_api_batch_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BatchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/health": {
+      "get": {
+        "tags": [
+          "data"
+        ],
+        "summary": "Health",
+        "operationId": "health_api_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Health Api Health Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "BacktestRequest": {
+        "properties": {
+          "strategy_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Strategy Id"
+          },
+          "spec": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Spec"
+          },
+          "config": {
+            "$ref": "#/components/schemas/RunConfigIn"
+          },
+          "force": {
+            "type": "boolean",
+            "title": "Force",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "config"
+        ],
+        "title": "BacktestRequest"
+      },
+      "BacktestResponse": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "title": "Run Id"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "running",
+              "done",
+              "error"
+            ],
+            "title": "Status"
+          },
+          "reused": {
+            "type": "boolean",
+            "title": "Reused"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "poll_url": {
+            "type": "string",
+            "title": "Poll Url"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "run_id",
+          "status",
+          "reused",
+          "message",
+          "poll_url"
+        ],
+        "title": "BacktestResponse"
+      },
+      "BatchPeriodIn": {
+        "properties": {
+          "start": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start"
+          },
+          "end": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "BatchPeriodIn"
+      },
+      "BatchRequest": {
+        "properties": {
+          "strategy_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Strategy Id"
+          },
+          "spec": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Spec"
+          },
+          "symbols": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 64,
+            "minItems": 1,
+            "title": "Symbols"
+          },
+          "config": {
+            "$ref": "#/components/schemas/RunConfigIn"
+          },
+          "periods": {
+            "items": {
+              "$ref": "#/components/schemas/BatchPeriodIn"
+            },
+            "type": "array",
+            "title": "Periods"
+          },
+          "grid": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "items": {},
+                  "type": "array"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Grid"
+          },
+          "consistency_metric": {
+            "type": "string",
+            "enum": [
+              "mean_r",
+              "expectancy",
+              "net_pnl",
+              "sharpe"
+            ],
+            "title": "Consistency Metric",
+            "default": "mean_r"
+          },
+          "max_workers": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 64.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Workers"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "symbols",
+          "config"
+        ],
+        "title": "BatchRequest"
+      },
+      "BatchResponse": {
+        "properties": {
+          "strategy_id": {
+            "type": "string",
+            "title": "Strategy Id"
+          },
+          "symbols": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Symbols"
+          },
+          "periods": {
+            "items": {
+              "$ref": "#/components/schemas/BatchPeriodIn"
+            },
+            "type": "array",
+            "title": "Periods"
+          },
+          "grid": {
+            "additionalProperties": {
+              "items": {},
+              "type": "array"
+            },
+            "type": "object",
+            "title": "Grid"
+          },
+          "grid_size": {
+            "type": "integer",
+            "title": "Grid Size"
+          },
+          "cells": {
+            "items": {
+              "$ref": "#/components/schemas/BatchRunOut"
+            },
+            "type": "array",
+            "title": "Cells"
+          },
+          "completed": {
+            "type": "integer",
+            "title": "Completed"
+          },
+          "failed": {
+            "type": "integer",
+            "title": "Failed"
+          },
+          "elapsed_seconds": {
+            "type": "number",
+            "title": "Elapsed Seconds"
+          },
+          "consistency": {
+            "$ref": "#/components/schemas/ConsistencyOut"
+          },
+          "verdict": {
+            "type": "string",
+            "title": "Verdict"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Warnings"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "strategy_id",
+          "symbols",
+          "grid_size",
+          "completed",
+          "failed",
+          "elapsed_seconds",
+          "consistency",
+          "verdict"
+        ],
+        "title": "BatchResponse"
+      },
+      "BatchRunOut": {
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "title": "Symbol"
+          },
+          "params": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Params"
+          },
+          "period_start": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period Start"
+          },
+          "period_end": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period End"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "bars": {
+            "type": "integer",
+            "title": "Bars"
+          },
+          "trades": {
+            "type": "integer",
+            "title": "Trades"
+          },
+          "net_pnl": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Net Pnl"
+          },
+          "expectancy": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expectancy"
+          },
+          "expectancy_stderr": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expectancy Stderr"
+          },
+          "mean_r": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mean R"
+          },
+          "mean_r_stderr": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mean R Stderr"
+          },
+          "sharpe": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sharpe"
+          },
+          "profit_factor": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Profit Factor"
+          },
+          "win_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Win Rate"
+          },
+          "max_drawdown_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Drawdown Pct"
+          },
+          "final_equity": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Final Equity"
+          },
+          "p_value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "P Value"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "symbol",
+          "status",
+          "bars",
+          "trades"
+        ],
+        "title": "BatchRunOut"
+      },
+      "BreakevenOut": {
+        "properties": {
+          "valid": {
+            "type": "boolean",
+            "title": "Valid"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "observations": {
+            "type": "integer",
+            "title": "Observations"
+          },
+          "breakeven_win_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Breakeven Win Rate"
+          },
+          "realized_win_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Realized Win Rate"
+          },
+          "delta": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Delta"
+          },
+          "avg_win": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avg Win"
+          },
+          "avg_loss": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avg Loss"
+          },
+          "non_binary_trades": {
+            "type": "integer",
+            "title": "Non Binary Trades",
+            "default": 0
+          },
+          "non_binary_reasons": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Non Binary Reasons"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "valid",
+          "observations"
+        ],
+        "title": "BreakevenOut",
+        "description": "Break-even win rate computed from realized trades, or why it is invalid."
+      },
+      "BreakevenPriorOut": {
+        "properties": {
+          "valid": {
+            "type": "boolean",
+            "title": "Valid"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "breakeven_win_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Breakeven Win Rate"
+          },
+          "loss_points": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Loss Points"
+          },
+          "win_points": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Win Points"
+          },
+          "commission_points": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Commission Points"
+          },
+          "avg_spread_points": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avg Spread Points"
+          },
+          "caveats": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Caveats"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "valid"
+        ],
+        "title": "BreakevenPriorOut",
+        "description": "A-priori break-even win rate, from the spec and cost assumptions alone."
+      },
+      "CompareConfigRow": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "values": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Values"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "key",
+          "values"
+        ],
+        "title": "CompareConfigRow",
+        "description": "One config field whose value differs between the compared runs."
+      },
+      "CompareMetricRow": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "format": {
+            "type": "string",
+            "enum": [
+              "pct",
+              "money",
+              "number",
+              "int",
+              "text"
+            ],
+            "title": "Format"
+          },
+          "higher_is_better": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Higher Is Better"
+          },
+          "values": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Values"
+          },
+          "delta": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Delta"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "key",
+          "label",
+          "format",
+          "higher_is_better",
+          "values",
+          "delta"
+        ],
+        "title": "CompareMetricRow"
+      },
+      "ComparePoint": {
+        "properties": {
+          "t": {
+            "type": "string",
+            "format": "date-time",
+            "title": "T"
+          },
+          "values": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Values"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "t",
+          "values"
+        ],
+        "title": "ComparePoint"
+      },
+      "CompareRequest": {
+        "properties": {
+          "run_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "minItems": 2,
+            "title": "Run Ids"
+          },
+          "points": {
+            "type": "integer",
+            "maximum": 5000.0,
+            "minimum": 50.0,
+            "title": "Points",
+            "default": 1500
+          },
+          "normalize": {
+            "type": "boolean",
+            "title": "Normalize",
+            "default": true
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "run_ids"
+        ],
+        "title": "CompareRequest"
+      },
+      "CompareResponse": {
+        "properties": {
+          "runs": {
+            "items": {
+              "$ref": "#/components/schemas/CompareRunOut"
+            },
+            "type": "array",
+            "title": "Runs"
+          },
+          "normalized": {
+            "type": "boolean",
+            "title": "Normalized"
+          },
+          "axis_start": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Axis Start"
+          },
+          "axis_end": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Axis End"
+          },
+          "series": {
+            "items": {
+              "$ref": "#/components/schemas/ComparePoint"
+            },
+            "type": "array",
+            "title": "Series"
+          },
+          "metrics": {
+            "items": {
+              "$ref": "#/components/schemas/CompareMetricRow"
+            },
+            "type": "array",
+            "title": "Metrics"
+          },
+          "config_diff": {
+            "items": {
+              "$ref": "#/components/schemas/CompareConfigRow"
+            },
+            "type": "array",
+            "title": "Config Diff"
+          },
+          "configs_identical": {
+            "type": "boolean",
+            "title": "Configs Identical",
+            "default": true
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Warnings"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "runs",
+          "normalized",
+          "axis_start",
+          "axis_end",
+          "series",
+          "metrics"
+        ],
+        "title": "CompareResponse"
+      },
+      "CompareRunOut": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "title": "Run Id"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "strategy_id": {
+            "type": "string",
+            "title": "Strategy Id"
+          },
+          "symbol": {
+            "type": "string",
+            "title": "Symbol"
+          },
+          "timeframe": {
+            "type": "string",
+            "title": "Timeframe"
+          },
+          "start": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start"
+          },
+          "end": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End"
+          },
+          "initial_equity": {
+            "type": "number",
+            "title": "Initial Equity"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "run_id",
+          "label",
+          "strategy_id",
+          "symbol",
+          "timeframe",
+          "start",
+          "end",
+          "initial_equity"
+        ],
+        "title": "CompareRunOut"
+      },
+      "ConsistencyOut": {
+        "properties": {
+          "metric": {
+            "type": "string",
+            "title": "Metric"
+          },
+          "observations": {
+            "type": "integer",
+            "title": "Observations"
+          },
+          "positive": {
+            "type": "integer",
+            "title": "Positive"
+          },
+          "negative": {
+            "type": "integer",
+            "title": "Negative"
+          },
+          "zero_or_missing": {
+            "type": "integer",
+            "title": "Zero Or Missing"
+          },
+          "mean": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mean"
+          },
+          "median": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Median"
+          },
+          "std": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Std"
+          },
+          "stderr": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stderr"
+          },
+          "minimum": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Minimum"
+          },
+          "maximum": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Maximum"
+          },
+          "sign_p_value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sign P Value"
+          },
+          "carried_by_one_symbol": {
+            "type": "boolean",
+            "title": "Carried By One Symbol"
+          },
+          "dominant_symbol": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dominant Symbol"
+          },
+          "verdict": {
+            "type": "string",
+            "title": "Verdict"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "metric",
+          "observations",
+          "positive",
+          "negative",
+          "zero_or_missing",
+          "carried_by_one_symbol",
+          "verdict"
+        ],
+        "title": "ConsistencyOut"
+      },
+      "CoverageOut": {
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "title": "Symbol"
+          },
+          "timeframe": {
+            "type": "string",
+            "title": "Timeframe"
+          },
+          "years": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Years"
+          },
+          "start": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start"
+          },
+          "end": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End"
+          },
+          "bars": {
+            "type": "integer",
+            "title": "Bars"
+          },
+          "quality": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QualityOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "symbol",
+          "timeframe",
+          "years",
+          "start",
+          "end",
+          "bars"
+        ],
+        "title": "CoverageOut"
+      },
+      "DeflatedSharpeOut": {
+        "properties": {
+          "valid": {
+            "type": "boolean",
+            "title": "Valid"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "observed_sharpe_per_trade": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observed Sharpe Per Trade"
+          },
+          "observed_sharpe_annualized": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observed Sharpe Annualized"
+          },
+          "expected_max_sharpe": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Max Sharpe"
+          },
+          "deflated_sharpe": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deflated Sharpe"
+          },
+          "probabilistic_sharpe": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Probabilistic Sharpe"
+          },
+          "trials": {
+            "type": "integer",
+            "title": "Trials"
+          },
+          "observations": {
+            "type": "integer",
+            "title": "Observations"
+          },
+          "skewness": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Skewness"
+          },
+          "kurtosis": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kurtosis"
+          },
+          "variance_across_trials": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Variance Across Trials"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "valid",
+          "trials",
+          "observations"
+        ],
+        "title": "DeflatedSharpeOut"
+      },
+      "DegradationRowOut": {
+        "properties": {
+          "metric": {
+            "type": "string",
+            "title": "Metric"
+          },
+          "observations": {
+            "type": "integer",
+            "title": "Observations"
+          },
+          "in_sample_mean": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "In Sample Mean"
+          },
+          "out_of_sample_mean": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Out Of Sample Mean"
+          },
+          "in_sample_stderr": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "In Sample Stderr"
+          },
+          "out_of_sample_stderr": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Out Of Sample Stderr"
+          },
+          "ratio": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ratio"
+          },
+          "ratio_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ratio Note"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "metric",
+          "observations"
+        ],
+        "title": "DegradationRowOut"
+      },
+      "DeleteResponse": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "title": "Run Id"
+          },
+          "deleted": {
+            "type": "boolean",
+            "title": "Deleted"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "run_id",
+          "deleted"
+        ],
+        "title": "DeleteResponse"
+      },
+      "EdgeRequest": {
+        "properties": {
+          "strategy_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Strategy Id"
+          },
+          "spec": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Spec"
+          },
+          "config": {
+            "$ref": "#/components/schemas/RunConfigIn"
+          },
+          "horizons": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Horizons"
+          },
+          "min_observations": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 2.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min Observations"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "config"
+        ],
+        "title": "EdgeRequest"
+      },
+      "EdgeResponse": {
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "title": "Symbol"
+          },
+          "timeframe": {
+            "type": "string",
+            "title": "Timeframe"
+          },
+          "bars": {
+            "type": "integer",
+            "title": "Bars"
+          },
+          "start": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start"
+          },
+          "end": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End"
+          },
+          "horizons": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Horizons"
+          },
+          "signals_long": {
+            "type": "integer",
+            "title": "Signals Long"
+          },
+          "signals_short": {
+            "type": "integer",
+            "title": "Signals Short"
+          },
+          "min_observations": {
+            "type": "integer",
+            "title": "Min Observations"
+          },
+          "significance": {
+            "type": "number",
+            "title": "Significance"
+          },
+          "stats": {
+            "items": {
+              "$ref": "#/components/schemas/EdgeStatOut"
+            },
+            "type": "array",
+            "title": "Stats"
+          },
+          "passed": {
+            "type": "boolean",
+            "title": "Passed"
+          },
+          "verdict": {
+            "type": "string",
+            "title": "Verdict"
+          },
+          "breakeven_prior": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BreakevenPriorOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "symbol",
+          "timeframe",
+          "bars",
+          "start",
+          "end",
+          "horizons",
+          "signals_long",
+          "signals_short",
+          "min_observations",
+          "significance",
+          "stats",
+          "passed",
+          "verdict"
+        ],
+        "title": "EdgeResponse"
+      },
+      "EdgeStatOut": {
+        "properties": {
+          "horizon": {
+            "type": "integer",
+            "title": "Horizon"
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "long",
+              "short",
+              "both"
+            ],
+            "title": "Direction"
+          },
+          "observations": {
+            "type": "integer",
+            "title": "Observations"
+          },
+          "mean_points": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mean Points"
+          },
+          "std_points": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Std Points"
+          },
+          "stderr_points": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stderr Points"
+          },
+          "t_stat": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "T Stat"
+          },
+          "p_value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "P Value"
+          },
+          "drift_baseline_points": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Drift Baseline Points"
+          },
+          "spread_cost_points": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Spread Cost Points"
+          },
+          "net_points": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Net Points"
+          },
+          "t_vs_cost": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "T Vs Cost"
+          },
+          "p_vs_cost": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "P Vs Cost"
+          },
+          "beats_cost": {
+            "type": "boolean",
+            "title": "Beats Cost"
+          },
+          "verdict": {
+            "type": "string",
+            "title": "Verdict"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "horizon",
+          "direction",
+          "observations",
+          "mean_points",
+          "std_points",
+          "stderr_points",
+          "t_stat",
+          "p_value",
+          "drift_baseline_points",
+          "spread_cost_points",
+          "net_points",
+          "t_vs_cost",
+          "p_vs_cost",
+          "beats_cost",
+          "verdict"
+        ],
+        "title": "EdgeStatOut"
+      },
+      "EquityOut": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "title": "Run Id"
+          },
+          "initial_equity": {
+            "type": "number",
+            "title": "Initial Equity"
+          },
+          "total_points": {
+            "type": "integer",
+            "title": "Total Points"
+          },
+          "returned_points": {
+            "type": "integer",
+            "title": "Returned Points"
+          },
+          "downsampled": {
+            "type": "boolean",
+            "title": "Downsampled"
+          },
+          "points": {
+            "items": {
+              "$ref": "#/components/schemas/EquityPoint"
+            },
+            "type": "array",
+            "title": "Points"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "run_id",
+          "initial_equity",
+          "total_points",
+          "returned_points",
+          "downsampled",
+          "points"
+        ],
+        "title": "EquityOut"
+      },
+      "EquityPoint": {
+        "properties": {
+          "t": {
+            "type": "string",
+            "format": "date-time",
+            "title": "T"
+          },
+          "equity": {
+            "type": "number",
+            "title": "Equity"
+          },
+          "drawdown": {
+            "type": "number",
+            "title": "Drawdown"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "t",
+          "equity",
+          "drawdown"
+        ],
+        "title": "EquityPoint"
+      },
+      "ExecutionOut": {
+        "properties": {
+          "signals_long": {
+            "type": "integer",
+            "title": "Signals Long"
+          },
+          "signals_short": {
+            "type": "integer",
+            "title": "Signals Short"
+          },
+          "trades": {
+            "type": "integer",
+            "title": "Trades"
+          },
+          "ambiguous_trades": {
+            "type": "integer",
+            "title": "Ambiguous Trades"
+          },
+          "gap_crossing_trades": {
+            "type": "integer",
+            "title": "Gap Crossing Trades"
+          },
+          "blocked": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Blocked"
+          },
+          "exit_reasons": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Exit Reasons"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "signals_long",
+          "signals_short",
+          "trades",
+          "ambiguous_trades",
+          "gap_crossing_trades"
+        ],
+        "title": "ExecutionOut"
+      },
+      "GapOut": {
+        "properties": {
+          "start": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Start"
+          },
+          "end": {
+            "type": "string",
+            "format": "date-time",
+            "title": "End"
+          },
+          "missing_bars": {
+            "type": "integer",
+            "title": "Missing Bars"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "start",
+          "end",
+          "missing_bars"
+        ],
+        "title": "GapOut"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "HistogramOut": {
+        "properties": {
+          "edges": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "Edges"
+          },
+          "counts": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Counts"
+          },
+          "observed": {
+            "type": "number",
+            "title": "Observed"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "edges",
+          "counts",
+          "observed"
+        ],
+        "title": "HistogramOut"
+      },
+      "MetricsOut": {
+        "properties": {
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "start": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start"
+          },
+          "end": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End"
+          },
+          "days": {
+            "type": "number",
+            "title": "Days"
+          },
+          "initial_equity": {
+            "type": "number",
+            "title": "Initial Equity"
+          },
+          "final_equity": {
+            "type": "number",
+            "title": "Final Equity"
+          },
+          "total_return": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Return"
+          },
+          "annual_return": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Annual Return"
+          },
+          "sharpe": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sharpe"
+          },
+          "sortino": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sortino"
+          },
+          "max_drawdown_money": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Drawdown Money"
+          },
+          "max_drawdown_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Drawdown Pct"
+          },
+          "calmar": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Calmar"
+          },
+          "trades": {
+            "type": "integer",
+            "title": "Trades"
+          },
+          "win_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Win Rate"
+          },
+          "profit_factor": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Profit Factor"
+          },
+          "expectancy": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expectancy"
+          },
+          "avg_duration": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avg Duration",
+            "description": "seconds"
+          },
+          "exposure": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exposure"
+          },
+          "max_losing_streak": {
+            "type": "integer",
+            "title": "Max Losing Streak"
+          },
+          "t_stat": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "T Stat"
+          },
+          "p_value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "P Value"
+          },
+          "r_multiples": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": "object",
+            "title": "R Multiples"
+          },
+          "costs": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": "object",
+            "title": "Costs"
+          },
+          "ambiguous_trades": {
+            "type": "integer",
+            "title": "Ambiguous Trades",
+            "default": 0
+          },
+          "gap_crossing_trades": {
+            "type": "integer",
+            "title": "Gap Crossing Trades",
+            "default": 0
+          },
+          "text": {
+            "type": "string",
+            "title": "Text",
+            "default": ""
+          },
+          "drawdown_unsustainable": {
+            "type": "boolean",
+            "title": "Drawdown Unsustainable",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "label",
+          "start",
+          "end",
+          "days",
+          "initial_equity",
+          "final_equity",
+          "total_return",
+          "annual_return",
+          "sharpe",
+          "sortino",
+          "max_drawdown_money",
+          "max_drawdown_pct",
+          "calmar",
+          "trades",
+          "win_rate",
+          "profit_factor",
+          "expectancy",
+          "exposure",
+          "max_losing_streak",
+          "t_stat",
+          "p_value"
+        ],
+        "title": "MetricsOut"
+      },
+      "MultipleTestingRequest": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Run Id"
+          },
+          "alpha": {
+            "type": "number",
+            "exclusiveMaximum": 1.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Alpha",
+            "default": 0.05
+          },
+          "grid": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "items": {},
+                  "type": "array"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Grid",
+            "description": "optional grid; without it PBO is declared not computed"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "run_id"
+        ],
+        "title": "MultipleTestingRequest"
+      },
+      "MultipleTestingResponse": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "title": "Run Id"
+          },
+          "symbol": {
+            "type": "string",
+            "title": "Symbol"
+          },
+          "period_start": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period Start"
+          },
+          "period_end": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period End"
+          },
+          "trials": {
+            "type": "integer",
+            "title": "Trials"
+          },
+          "trials_detail": {
+            "items": {
+              "$ref": "#/components/schemas/TrialOut"
+            },
+            "type": "array",
+            "title": "Trials Detail"
+          },
+          "alpha": {
+            "type": "number",
+            "title": "Alpha"
+          },
+          "deflated_sharpe": {
+            "$ref": "#/components/schemas/DeflatedSharpeOut"
+          },
+          "thresholds": {
+            "items": {
+              "$ref": "#/components/schemas/ThresholdRowOut"
+            },
+            "type": "array",
+            "title": "Thresholds"
+          },
+          "pbo": {
+            "$ref": "#/components/schemas/PBOOut"
+          },
+          "verdict": {
+            "type": "string",
+            "title": "Verdict"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Warnings"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "run_id",
+          "symbol",
+          "trials",
+          "alpha",
+          "deflated_sharpe",
+          "pbo",
+          "verdict"
+        ],
+        "title": "MultipleTestingResponse"
+      },
+      "OosPointOut": {
+        "properties": {
+          "t": {
+            "type": "string",
+            "format": "date-time",
+            "title": "T"
+          },
+          "equity": {
+            "type": "number",
+            "title": "Equity"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "t",
+          "equity"
+        ],
+        "title": "OosPointOut"
+      },
+      "PBOOut": {
+        "properties": {
+          "valid": {
+            "type": "boolean",
+            "title": "Valid"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "pbo": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pbo"
+          },
+          "splits": {
+            "type": "integer",
+            "title": "Splits",
+            "default": 0
+          },
+          "slices": {
+            "type": "integer",
+            "title": "Slices",
+            "default": 0
+          },
+          "candidates": {
+            "type": "integer",
+            "title": "Candidates",
+            "default": 0
+          },
+          "logits": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "Logits"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "valid"
+        ],
+        "title": "PBOOut"
+      },
+      "PermutationRequest": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Run Id"
+          },
+          "iterations": {
+            "type": "integer",
+            "maximum": 20000.0,
+            "minimum": 10.0,
+            "title": "Iterations",
+            "default": 1000
+          },
+          "tests": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "random_entries",
+                "permuted_returns"
+              ]
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Tests"
+          },
+          "block_bars": {
+            "type": "integer",
+            "maximum": 100000.0,
+            "minimum": 2.0,
+            "title": "Block Bars",
+            "default": 512
+          },
+          "seed": {
+            "type": "integer",
+            "title": "Seed",
+            "default": 12345
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "run_id"
+        ],
+        "title": "PermutationRequest"
+      },
+      "PermutationResponse": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "title": "Run Id"
+          },
+          "symbol": {
+            "type": "string",
+            "title": "Symbol"
+          },
+          "tests": {
+            "items": {
+              "$ref": "#/components/schemas/PermutationTestOut"
+            },
+            "type": "array",
+            "title": "Tests"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "run_id",
+          "symbol"
+        ],
+        "title": "PermutationResponse"
+      },
+      "PermutationStatisticOut": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "observed": {
+            "type": "number",
+            "title": "Observed"
+          },
+          "null_mean": {
+            "type": "number",
+            "title": "Null Mean"
+          },
+          "null_std": {
+            "type": "number",
+            "title": "Null Std"
+          },
+          "null_p05": {
+            "type": "number",
+            "title": "Null P05"
+          },
+          "null_p50": {
+            "type": "number",
+            "title": "Null P50"
+          },
+          "null_p95": {
+            "type": "number",
+            "title": "Null P95"
+          },
+          "percentile": {
+            "type": "number",
+            "title": "Percentile"
+          },
+          "p_value": {
+            "type": "number",
+            "title": "P Value"
+          },
+          "iterations": {
+            "type": "integer",
+            "title": "Iterations"
+          },
+          "better_than_null": {
+            "type": "boolean",
+            "title": "Better Than Null"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "key",
+          "label",
+          "observed",
+          "null_mean",
+          "null_std",
+          "null_p05",
+          "null_p50",
+          "null_p95",
+          "percentile",
+          "p_value",
+          "iterations",
+          "better_than_null"
+        ],
+        "title": "PermutationStatisticOut"
+      },
+      "PermutationTestOut": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "random_entries",
+              "permuted_returns"
+            ],
+            "title": "Kind"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "iterations": {
+            "type": "integer",
+            "title": "Iterations"
+          },
+          "iterations_requested": {
+            "type": "integer",
+            "title": "Iterations Requested"
+          },
+          "seed": {
+            "type": "integer",
+            "title": "Seed"
+          },
+          "elapsed_seconds": {
+            "type": "number",
+            "title": "Elapsed Seconds"
+          },
+          "observed_trades": {
+            "type": "integer",
+            "title": "Observed Trades"
+          },
+          "null_trades_mean": {
+            "type": "number",
+            "title": "Null Trades Mean"
+          },
+          "null_trades_std": {
+            "type": "number",
+            "title": "Null Trades Std"
+          },
+          "statistics": {
+            "items": {
+              "$ref": "#/components/schemas/PermutationStatisticOut"
+            },
+            "type": "array",
+            "title": "Statistics"
+          },
+          "histogram": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HistogramOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "verdict": {
+            "type": "string",
+            "title": "Verdict"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Warnings"
+          },
+          "block_bars": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Block Bars"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind",
+          "description",
+          "iterations",
+          "iterations_requested",
+          "seed",
+          "elapsed_seconds",
+          "observed_trades",
+          "null_trades_mean",
+          "null_trades_std",
+          "verdict"
+        ],
+        "title": "PermutationTestOut"
+      },
+      "QualityOut": {
+        "properties": {
+          "rows": {
+            "type": "integer",
+            "title": "Rows"
+          },
+          "first_bar": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Bar"
+          },
+          "last_bar": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Bar"
+          },
+          "expected_bars": {
+            "type": "integer",
+            "title": "Expected Bars"
+          },
+          "missing_bars": {
+            "type": "integer",
+            "title": "Missing Bars"
+          },
+          "completeness": {
+            "type": "number",
+            "title": "Completeness"
+          },
+          "gaps": {
+            "type": "integer",
+            "title": "Gaps"
+          },
+          "duplicate_timestamps": {
+            "type": "integer",
+            "title": "Duplicate Timestamps"
+          },
+          "zero_spread": {
+            "type": "integer",
+            "title": "Zero Spread"
+          },
+          "session_confidence": {
+            "type": "string",
+            "title": "Session Confidence"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          },
+          "worst_gaps": {
+            "items": {
+              "$ref": "#/components/schemas/GapOut"
+            },
+            "type": "array",
+            "title": "Worst Gaps"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "rows",
+          "first_bar",
+          "last_bar",
+          "expected_bars",
+          "missing_bars",
+          "completeness",
+          "gaps",
+          "duplicate_timestamps",
+          "zero_spread",
+          "session_confidence",
+          "text"
+        ],
+        "title": "QualityOut"
+      },
+      "ResolvedTradeOut": {
+        "properties": {
+          "index": {
+            "type": "integer",
+            "title": "Index"
+          },
+          "direction": {
+            "type": "integer",
+            "title": "Direction"
+          },
+          "entry_time": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Entry Time"
+          },
+          "exit_time": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Exit Time"
+          },
+          "original_reason": {
+            "type": "string",
+            "title": "Original Reason"
+          },
+          "resolution": {
+            "type": "string",
+            "enum": [
+              "stop_loss",
+              "take_profit",
+              "unresolved"
+            ],
+            "title": "Resolution"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "ticks": {
+            "type": "integer",
+            "title": "Ticks"
+          },
+          "stop_level": {
+            "type": "number",
+            "title": "Stop Level"
+          },
+          "target_level": {
+            "type": "number",
+            "title": "Target Level"
+          },
+          "original_net_pnl": {
+            "type": "number",
+            "title": "Original Net Pnl"
+          },
+          "resolved_net_pnl": {
+            "type": "number",
+            "title": "Resolved Net Pnl"
+          },
+          "delta": {
+            "type": "number",
+            "title": "Delta"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "index",
+          "direction",
+          "entry_time",
+          "exit_time",
+          "original_reason",
+          "resolution",
+          "ticks",
+          "stop_level",
+          "target_level",
+          "original_net_pnl",
+          "resolved_net_pnl",
+          "delta"
+        ],
+        "title": "ResolvedTradeOut"
+      },
+      "RunConfigIn": {
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Symbol"
+          },
+          "timeframe": {
+            "type": "string",
+            "title": "Timeframe",
+            "default": "M1"
+          },
+          "start": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start"
+          },
+          "end": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End"
+          },
+          "initial_equity": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Initial Equity",
+            "default": 100.0
+          },
+          "spread_mode": {
+            "type": "string",
+            "enum": [
+              "per_bar",
+              "fixed",
+              "quantile"
+            ],
+            "title": "Spread Mode",
+            "default": "per_bar"
+          },
+          "spread_value": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Spread Value"
+          },
+          "commission_per_lot_per_side": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Commission Per Lot Per Side",
+            "default": 0.0
+          },
+          "swap_mode": {
+            "type": "string",
+            "enum": [
+              "points",
+              "money",
+              "none"
+            ],
+            "title": "Swap Mode",
+            "default": "points"
+          },
+          "session_threshold": {
+            "type": "number",
+            "maximum": 1.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Session Threshold",
+            "default": 0.5
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "symbol"
+        ],
+        "title": "RunConfigIn"
+      },
+      "RunDetailOut": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "title": "Run Id"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "running",
+              "done",
+              "error"
+            ],
+            "title": "Status"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "duration_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Seconds"
+          },
+          "engine_version": {
+            "type": "string",
+            "title": "Engine Version"
+          },
+          "spec_hash": {
+            "type": "string",
+            "title": "Spec Hash"
+          },
+          "data_hash": {
+            "type": "string",
+            "title": "Data Hash"
+          },
+          "bars": {
+            "type": "integer",
+            "title": "Bars"
+          },
+          "data_start": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data Start"
+          },
+          "data_end": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data End"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "spec": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Spec"
+          },
+          "config": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Config"
+          },
+          "strategy": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MetricsOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "benchmark": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MetricsOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "breakeven": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BreakevenOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "execution": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExecutionOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "run_id",
+          "status",
+          "created_at",
+          "finished_at",
+          "duration_seconds",
+          "engine_version",
+          "spec_hash",
+          "data_hash",
+          "bars",
+          "data_start",
+          "data_end",
+          "error",
+          "spec",
+          "config"
+        ],
+        "title": "RunDetailOut"
+      },
+      "RunSummaryOut": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "title": "Run Id"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "running",
+              "done",
+              "error"
+            ],
+            "title": "Status"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "strategy_id": {
+            "type": "string",
+            "title": "Strategy Id"
+          },
+          "strategy_name": {
+            "type": "string",
+            "title": "Strategy Name"
+          },
+          "symbol": {
+            "type": "string",
+            "title": "Symbol"
+          },
+          "timeframe": {
+            "type": "string",
+            "title": "Timeframe"
+          },
+          "data_start": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data Start"
+          },
+          "data_end": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data End"
+          },
+          "bars": {
+            "type": "integer",
+            "title": "Bars"
+          },
+          "duration_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Seconds"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "trades": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trades"
+          },
+          "final_equity": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Final Equity"
+          },
+          "total_return": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Return"
+          },
+          "sharpe": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sharpe"
+          },
+          "max_drawdown_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Drawdown Pct"
+          },
+          "profit_factor": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Profit Factor"
+          },
+          "win_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Win Rate"
+          },
+          "ambiguous_trades": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ambiguous Trades"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "run_id",
+          "status",
+          "created_at",
+          "strategy_id",
+          "strategy_name",
+          "symbol",
+          "timeframe",
+          "data_start",
+          "data_end",
+          "bars",
+          "duration_seconds",
+          "error",
+          "trades",
+          "final_equity",
+          "total_return",
+          "sharpe",
+          "max_drawdown_pct",
+          "profit_factor",
+          "win_rate",
+          "ambiguous_trades"
+        ],
+        "title": "RunSummaryOut"
+      },
+      "StabilityRowOut": {
+        "properties": {
+          "parameter": {
+            "type": "string",
+            "title": "Parameter"
+          },
+          "observations": {
+            "type": "integer",
+            "title": "Observations"
+          },
+          "distinct_values": {
+            "type": "integer",
+            "title": "Distinct Values"
+          },
+          "chosen": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Chosen"
+          },
+          "counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Counts"
+          },
+          "mode": {
+            "type": "string",
+            "title": "Mode"
+          },
+          "mode_share": {
+            "type": "number",
+            "title": "Mode Share"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "parameter",
+          "observations",
+          "distinct_values",
+          "chosen",
+          "counts",
+          "mode",
+          "mode_share"
+        ],
+        "title": "StabilityRowOut"
+      },
+      "StrategyOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "symbol": {
+            "type": "string",
+            "title": "Symbol"
+          },
+          "timeframe": {
+            "type": "string",
+            "title": "Timeframe"
+          },
+          "file": {
+            "type": "string",
+            "title": "File"
+          },
+          "spec": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Spec"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "description",
+          "symbol",
+          "timeframe",
+          "file",
+          "spec"
+        ],
+        "title": "StrategyOut"
+      },
+      "SymbolListOut": {
+        "properties": {
+          "symbols": {
+            "items": {
+              "$ref": "#/components/schemas/SymbolSpecOut"
+            },
+            "type": "array",
+            "title": "Symbols"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "terminal",
+              "cache"
+            ],
+            "title": "Source"
+          },
+          "server_timezone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Server Timezone"
+          },
+          "cached_symbols": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Cached Symbols",
+            "description": "symbols with data already in the local cache"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "symbols",
+          "source"
+        ],
+        "title": "SymbolListOut"
+      },
+      "SymbolSpecOut": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "point": {
+            "type": "number",
+            "title": "Point"
+          },
+          "digits": {
+            "type": "integer",
+            "title": "Digits"
+          },
+          "contract_size": {
+            "type": "number",
+            "title": "Contract Size"
+          },
+          "tick_value": {
+            "type": "number",
+            "title": "Tick Value"
+          },
+          "tick_size": {
+            "type": "number",
+            "title": "Tick Size"
+          },
+          "volume_min": {
+            "type": "number",
+            "title": "Volume Min"
+          },
+          "volume_max": {
+            "type": "number",
+            "title": "Volume Max"
+          },
+          "volume_step": {
+            "type": "number",
+            "title": "Volume Step"
+          },
+          "swap_long": {
+            "type": "number",
+            "title": "Swap Long"
+          },
+          "swap_short": {
+            "type": "number",
+            "title": "Swap Short"
+          },
+          "currency_profit": {
+            "type": "string",
+            "title": "Currency Profit"
+          },
+          "trade_mode": {
+            "type": "string",
+            "title": "Trade Mode"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name",
+          "point",
+          "digits",
+          "contract_size",
+          "tick_value",
+          "tick_size",
+          "volume_min",
+          "volume_max",
+          "volume_step",
+          "swap_long",
+          "swap_short",
+          "currency_profit",
+          "trade_mode"
+        ],
+        "title": "SymbolSpecOut"
+      },
+      "ThresholdRowOut": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "title": "Run Id"
+          },
+          "strategy_id": {
+            "type": "string",
+            "title": "Strategy Id"
+          },
+          "p_value": {
+            "type": "number",
+            "title": "P Value"
+          },
+          "rank": {
+            "type": "integer",
+            "title": "Rank"
+          },
+          "bonferroni_threshold": {
+            "type": "number",
+            "title": "Bonferroni Threshold"
+          },
+          "benjamini_hochberg_threshold": {
+            "type": "number",
+            "title": "Benjamini Hochberg Threshold"
+          },
+          "passes_bonferroni": {
+            "type": "boolean",
+            "title": "Passes Bonferroni"
+          },
+          "passes_benjamini_hochberg": {
+            "type": "boolean",
+            "title": "Passes Benjamini Hochberg"
+          },
+          "mean_pnl_positive": {
+            "type": "boolean",
+            "title": "Mean Pnl Positive"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "run_id",
+          "strategy_id",
+          "p_value",
+          "rank",
+          "bonferroni_threshold",
+          "benjamini_hochberg_threshold",
+          "passes_bonferroni",
+          "passes_benjamini_hochberg",
+          "mean_pnl_positive"
+        ],
+        "title": "ThresholdRowOut"
+      },
+      "TickResolveRequest": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Run Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "run_id"
+        ],
+        "title": "TickResolveRequest"
+      },
+      "TickResolveResponse": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "title": "Run Id"
+          },
+          "symbol": {
+            "type": "string",
+            "title": "Symbol"
+          },
+          "available": {
+            "type": "boolean",
+            "title": "Available"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "ambiguous_trades": {
+            "type": "integer",
+            "title": "Ambiguous Trades"
+          },
+          "resolved": {
+            "type": "integer",
+            "title": "Resolved"
+          },
+          "unresolved": {
+            "type": "integer",
+            "title": "Unresolved"
+          },
+          "resolved_to_take_profit": {
+            "type": "integer",
+            "title": "Resolved To Take Profit"
+          },
+          "resolved_to_stop_loss": {
+            "type": "integer",
+            "title": "Resolved To Stop Loss"
+          },
+          "trades": {
+            "items": {
+              "$ref": "#/components/schemas/ResolvedTradeOut"
+            },
+            "type": "array",
+            "title": "Trades"
+          },
+          "original_net_pnl": {
+            "type": "number",
+            "title": "Original Net Pnl"
+          },
+          "resolved_net_pnl": {
+            "type": "number",
+            "title": "Resolved Net Pnl"
+          },
+          "delta_net_pnl": {
+            "type": "number",
+            "title": "Delta Net Pnl"
+          },
+          "original_final_equity": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Original Final Equity"
+          },
+          "resolved_final_equity": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolved Final Equity"
+          },
+          "original_win_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Original Win Rate"
+          },
+          "resolved_win_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolved Win Rate"
+          },
+          "verdict": {
+            "type": "string",
+            "title": "Verdict"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Warnings"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "run_id",
+          "symbol",
+          "available",
+          "ambiguous_trades",
+          "resolved",
+          "unresolved",
+          "resolved_to_take_profit",
+          "resolved_to_stop_loss",
+          "original_net_pnl",
+          "resolved_net_pnl",
+          "delta_net_pnl",
+          "verdict"
+        ],
+        "title": "TickResolveResponse"
+      },
+      "TradeOut": {
+        "properties": {
+          "index": {
+            "type": "integer",
+            "title": "Index"
+          },
+          "direction": {
+            "type": "integer",
+            "title": "Direction"
+          },
+          "entry_time": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Entry Time"
+          },
+          "entry_price": {
+            "type": "number",
+            "title": "Entry Price"
+          },
+          "exit_time": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Exit Time"
+          },
+          "exit_price": {
+            "type": "number",
+            "title": "Exit Price"
+          },
+          "exit_reason": {
+            "type": "string",
+            "title": "Exit Reason"
+          },
+          "lots": {
+            "type": "number",
+            "title": "Lots"
+          },
+          "bars_held": {
+            "type": "integer",
+            "title": "Bars Held"
+          },
+          "session_bars_held": {
+            "type": "integer",
+            "title": "Session Bars Held"
+          },
+          "gross_pnl": {
+            "type": "number",
+            "title": "Gross Pnl"
+          },
+          "spread_points": {
+            "type": "number",
+            "title": "Spread Points"
+          },
+          "spread_cost": {
+            "type": "number",
+            "title": "Spread Cost"
+          },
+          "commission": {
+            "type": "number",
+            "title": "Commission"
+          },
+          "swap": {
+            "type": "number",
+            "title": "Swap"
+          },
+          "net_pnl": {
+            "type": "number",
+            "title": "Net Pnl"
+          },
+          "risk_money": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Risk Money"
+          },
+          "r_multiple": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "R Multiple"
+          },
+          "ambiguous": {
+            "type": "boolean",
+            "title": "Ambiguous"
+          },
+          "crossed_gap": {
+            "type": "boolean",
+            "title": "Crossed Gap"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "index",
+          "direction",
+          "entry_time",
+          "entry_price",
+          "exit_time",
+          "exit_price",
+          "exit_reason",
+          "lots",
+          "bars_held",
+          "session_bars_held",
+          "gross_pnl",
+          "spread_points",
+          "spread_cost",
+          "commission",
+          "swap",
+          "net_pnl",
+          "risk_money",
+          "r_multiple",
+          "ambiguous",
+          "crossed_gap"
+        ],
+        "title": "TradeOut"
+      },
+      "TradesOut": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "title": "Run Id"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "offset": {
+            "type": "integer",
+            "title": "Offset"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          },
+          "ambiguous_total": {
+            "type": "integer",
+            "title": "Ambiguous Total"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/TradeOut"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "run_id",
+          "total",
+          "offset",
+          "limit",
+          "ambiguous_total",
+          "items"
+        ],
+        "title": "TradesOut"
+      },
+      "TrialOut": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "title": "Run Id"
+          },
+          "strategy_id": {
+            "type": "string",
+            "title": "Strategy Id"
+          },
+          "spec_hash": {
+            "type": "string",
+            "title": "Spec Hash"
+          },
+          "trades": {
+            "type": "integer",
+            "title": "Trades"
+          },
+          "sharpe_per_trade": {
+            "type": "number",
+            "title": "Sharpe Per Trade"
+          },
+          "net_pnl": {
+            "type": "number",
+            "title": "Net Pnl"
+          },
+          "p_value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "P Value"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "run_id",
+          "strategy_id",
+          "spec_hash",
+          "trades",
+          "sharpe_per_trade",
+          "net_pnl"
+        ],
+        "title": "TrialOut"
+      },
+      "ValidateRequest": {
+        "properties": {
+          "spec": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Spec"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "spec"
+        ],
+        "title": "ValidateRequest"
+      },
+      "ValidateResponse": {
+        "properties": {
+          "valid": {
+            "type": "boolean",
+            "title": "Valid"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "errors": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Errors"
+          },
+          "normalized": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Normalized"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "valid",
+          "message"
+        ],
+        "title": "ValidateResponse"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      },
+      "WalkForwardMetricsOut": {
+        "properties": {
+          "trades": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trades"
+          },
+          "net_pnl": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Net Pnl"
+          },
+          "total_return": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Return"
+          },
+          "sharpe": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sharpe"
+          },
+          "profit_factor": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Profit Factor"
+          },
+          "win_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Win Rate"
+          },
+          "expectancy": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expectancy"
+          },
+          "max_drawdown_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Drawdown Pct"
+          },
+          "final_equity": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Final Equity"
+          },
+          "initial_equity": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Initial Equity"
+          },
+          "start": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start"
+          },
+          "end": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "title": "WalkForwardMetricsOut",
+        "description": "Metrics of one leg. Extra keys are allowed: the engine may add more."
+      },
+      "WalkForwardRequest": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Run Id"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "rolling",
+              "anchored"
+            ],
+            "title": "Mode",
+            "default": "rolling"
+          },
+          "train_days": {
+            "type": "integer",
+            "maximum": 3650.0,
+            "minimum": 1.0,
+            "title": "Train Days",
+            "default": 90
+          },
+          "test_days": {
+            "type": "integer",
+            "maximum": 3650.0,
+            "minimum": 1.0,
+            "title": "Test Days",
+            "default": 30
+          },
+          "min_train_trades": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Min Train Trades",
+            "default": 30
+          },
+          "objective": {
+            "type": "string",
+            "enum": [
+              "net_pnl",
+              "sharpe",
+              "profit_factor",
+              "expectancy"
+            ],
+            "title": "Objective",
+            "default": "net_pnl"
+          },
+          "grid": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "items": {},
+                  "type": "array"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Grid",
+            "description": "dotted spec path -> values to try, e.g. exit.stop_loss.value: [100, 150, 200]"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "run_id"
+        ],
+        "title": "WalkForwardRequest"
+      },
+      "WalkForwardResponse": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "title": "Run Id"
+          },
+          "symbol": {
+            "type": "string",
+            "title": "Symbol"
+          },
+          "timeframe": {
+            "type": "string",
+            "title": "Timeframe"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "rolling",
+              "anchored"
+            ],
+            "title": "Mode"
+          },
+          "train_days": {
+            "type": "integer",
+            "title": "Train Days"
+          },
+          "test_days": {
+            "type": "integer",
+            "title": "Test Days"
+          },
+          "min_train_trades": {
+            "type": "integer",
+            "title": "Min Train Trades"
+          },
+          "objective": {
+            "type": "string",
+            "title": "Objective"
+          },
+          "embargo_minutes": {
+            "type": "number",
+            "title": "Embargo Minutes"
+          },
+          "grid": {
+            "additionalProperties": {
+              "items": {},
+              "type": "array"
+            },
+            "type": "object",
+            "title": "Grid"
+          },
+          "grid_size": {
+            "type": "integer",
+            "title": "Grid Size"
+          },
+          "optimized": {
+            "type": "boolean",
+            "title": "Optimized"
+          },
+          "windows": {
+            "items": {
+              "$ref": "#/components/schemas/WalkForwardWindowOut"
+            },
+            "type": "array",
+            "title": "Windows"
+          },
+          "windows_evaluated": {
+            "type": "integer",
+            "title": "Windows Evaluated"
+          },
+          "windows_skipped": {
+            "type": "integer",
+            "title": "Windows Skipped"
+          },
+          "oos_trades": {
+            "type": "integer",
+            "title": "Oos Trades"
+          },
+          "oos_metrics": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WalkForwardMetricsOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "oos_curve": {
+            "items": {
+              "$ref": "#/components/schemas/OosPointOut"
+            },
+            "type": "array",
+            "title": "Oos Curve"
+          },
+          "degradation": {
+            "items": {
+              "$ref": "#/components/schemas/DegradationRowOut"
+            },
+            "type": "array",
+            "title": "Degradation"
+          },
+          "parameter_stability": {
+            "items": {
+              "$ref": "#/components/schemas/StabilityRowOut"
+            },
+            "type": "array",
+            "title": "Parameter Stability"
+          },
+          "verdict": {
+            "type": "string",
+            "title": "Verdict"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Warnings"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "run_id",
+          "symbol",
+          "timeframe",
+          "mode",
+          "train_days",
+          "test_days",
+          "min_train_trades",
+          "objective",
+          "embargo_minutes",
+          "grid_size",
+          "optimized",
+          "windows_evaluated",
+          "windows_skipped",
+          "oos_trades",
+          "verdict"
+        ],
+        "title": "WalkForwardResponse"
+      },
+      "WalkForwardWindowOut": {
+        "properties": {
+          "index": {
+            "type": "integer",
+            "title": "Index"
+          },
+          "train_start": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Train Start"
+          },
+          "train_end": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Train End"
+          },
+          "test_start": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Test Start"
+          },
+          "test_end": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Test End"
+          },
+          "embargo_minutes": {
+            "type": "number",
+            "title": "Embargo Minutes"
+          },
+          "skipped": {
+            "type": "boolean",
+            "title": "Skipped"
+          },
+          "skip_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Skip Reason"
+          },
+          "candidates_evaluated": {
+            "type": "integer",
+            "title": "Candidates Evaluated"
+          },
+          "chosen_params": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Chosen Params"
+          },
+          "train_trades": {
+            "type": "integer",
+            "title": "Train Trades"
+          },
+          "test_trades": {
+            "type": "integer",
+            "title": "Test Trades"
+          },
+          "train_metrics": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WalkForwardMetricsOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "test_metrics": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WalkForwardMetricsOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "equity_start": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Equity Start"
+          },
+          "equity_end": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Equity End"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "index",
+          "train_start",
+          "train_end",
+          "test_start",
+          "test_end",
+          "embargo_minutes",
+          "skipped",
+          "candidates_evaluated",
+          "train_trades",
+          "test_trades"
+        ],
+        "title": "WalkForwardWindowOut"
+      }
+    }
+  }
+}

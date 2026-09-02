@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "backtest-engine"
+version = "0.1.0"
+description = "Backtesting engine for trading strategies on MetaTrader 5 data"
+requires-python = ">=3.10"
+dependencies = [
+    "pandas>=2.0",
+    "numpy>=1.24",
+    "pyarrow>=14.0",
+    "pydantic>=2.5",
+    "scipy>=1.11",
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "PyYAML>=6.0",
+    "MetaTrader5>=5.0.45; sys_platform == 'win32'",
+    "tzdata; sys_platform == 'win32'",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "httpx>=0.27"]
+
+[tool.setuptools.packages.find]
+include = ["core*", "api*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "mt5: requires a running MetaTrader 5 terminal (skipped if absent)",
+]
+filterwarnings = ["error::FutureWarning"]

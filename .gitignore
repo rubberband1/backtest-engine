@@ -1,0 +1,30 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+build/
+dist/
+
+# market data cache: regenerable, heavy
+data_cache/
+*.parquet
+*.hc
+
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+.env
+*.log
+.temp/
+
+.vscode/
+.idea/
+
+# frontend
+ui/node_modules/
+ui/dist/
+
+# persisted runs: regenerable, heavy
+runs/
