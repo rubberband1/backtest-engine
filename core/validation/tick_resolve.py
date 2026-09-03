@@ -91,12 +91,25 @@ class TickResolveReport:
 def levels_for(
     trade: pd.Series, spec: StrategySpec, symbol_spec: SymbolSpec
 ) -> tuple[float | None, float | None]:
-    """Stop and target of a trade, rebuilt exactly as the engine placed them.
+    """Stop and target of a trade, exactly as the engine placed them.
 
-    The engine anchors both to the spread-inclusive entry price, so they are a
-    deterministic function of what the trade record already stores.
+    Trades record the levels they were given, which is the only thing that
+    works for ATR- or percent-sized exits: their distance depends on the entry
+    bar and cannot be reconstructed from the spec afterwards. Records written
+    before those levels existed fall back to recomputing a fixed points
+    distance, the only kind that was possible then.
     """
+    if "stop_level" in trade.index and "target_level" in trade.index:
+        stop = trade["stop_level"]
+        target = trade["target_level"]
+        return (
+            float(stop) if pd.notna(stop) else None,
+            float(target) if pd.notna(target) else None,
+        )
+
     if spec.exit.stop_loss is None or spec.exit.take_profit is None:
+        return None, None
+    if spec.exit.stop_loss.type != "points" or spec.exit.take_profit.type != "points":
         return None, None
     direction = int(trade["direction"])
     entry = float(trade["entry_price"])
@@ -214,8 +227,8 @@ def resolve_ambiguous(
         return _empty_report(
             run_id,
             symbol,
-            "the spec has no fixed stop and target in points: there is no pair of "
-            "levels whose ordering could be read from the ticks",
+            "these trades carry no stop and target pair: there is no ordering of "
+            "two levels for the ticks to resolve",
         )
 
     bar_length = timedelta(minutes=timeframe.minutes)

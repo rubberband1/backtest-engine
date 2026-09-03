@@ -147,11 +147,16 @@ def random_entry_signals(
     n_long: int,
     n_short: int,
     rng: np.random.Generator,
+    indicators: dict[str, pd.Series] | None = None,
 ) -> Signals:
     """`n_long` + `n_short` entry signals dropped at random bars.
 
     Placed without replacement so two entries never land on the same bar,
     which the real signal series also cannot do.
+
+    `indicators` carries the strategy's own series through: the bars are the
+    real ones here, only the entry timing is randomized, so an ATR-sized stop
+    must be sized off exactly the same ATR the strategy would have read.
     """
     total = n_long + n_short
     long_flags = np.zeros(len(index), dtype=bool)
@@ -163,6 +168,7 @@ def random_entry_signals(
     return Signals(
         long=pd.Series(long_flags, index=index, name="long"),
         short=pd.Series(short_flags, index=index, name="short"),
+        indicators=dict(indicators or {}),
     )
 
 
@@ -237,6 +243,7 @@ def _init_worker(
     n_long: int,
     n_short: int,
     block_bars: int,
+    indicators: dict[str, pd.Series],
 ) -> None:
     """Ships the bars to each worker once, not once per iteration."""
     _CONTEXT.update(
@@ -249,6 +256,7 @@ def _init_worker(
         n_long=n_long,
         n_short=n_short,
         block_bars=block_bars,
+        indicators=indicators,
     )
 
 
@@ -261,7 +269,8 @@ def _iteration(seed: int) -> dict[str, float]:
 
     if kind == "random_entries":
         signals = random_entry_signals(
-            bars.index, _CONTEXT["n_long"], _CONTEXT["n_short"], rng
+            bars.index, _CONTEXT["n_long"], _CONTEXT["n_short"], rng,
+            _CONTEXT.get("indicators"),
         )
         result = run_backtest(
             spec, bars, _CONTEXT["symbol_spec"], _CONTEXT["server_tz"], config, signals
@@ -356,6 +365,9 @@ def permutation_test(
         counts["long"],
         counts["short"],
         block_bars,
+        # only the random-entries null runs on the real bars, so only it can
+        # (and must) reuse the strategy's own indicator series
+        real_signals.indicators if kind == "random_entries" else {},
     )
     workers = max_workers or min(os.cpu_count() or 4, MAX_WORKERS_CAP)
     with ProcessPoolExecutor(

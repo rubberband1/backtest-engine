@@ -174,6 +174,9 @@ class BreakevenPriorOut(Model):
     commission_points: float | None = None
     avg_spread_points: float | None = None
     caveats: list[str] = Field(default_factory=list)
+    variable_exits: bool = False
+    stop_points_std: float | None = None
+    target_points_std: float | None = None
 
 
 class EdgeResponse(Model):
@@ -240,6 +243,9 @@ class BreakevenOut(Model):
     avg_loss: float | None = None
     non_binary_trades: int = 0
     non_binary_reasons: dict[str, int] = Field(default_factory=dict)
+    variable_exits: bool = False
+    win_relative_std: float | None = None
+    loss_relative_std: float | None = None
 
 
 class ExecutionOut(Model):
@@ -316,6 +322,8 @@ class TradeOut(Model):
     direction: int
     entry_time: datetime
     entry_price: float
+    stop_level: float | None = None
+    target_level: float | None = None
     exit_time: datetime
     exit_price: float
     exit_reason: str

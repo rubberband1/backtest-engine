@@ -108,6 +108,28 @@ class TestRealized:
         assert not report.valid
         assert report.observations == 0
 
+    def test_variable_exits_keep_the_number_and_declare_the_dispersion(self) -> None:
+        """With ATR or percent exits every trade has its own distance."""
+        wins = [("take_profit", 0.2 + 0.05 * i) for i in range(40)]
+        losses = [("stop_loss", -(1.0 + 0.05 * i)) for i in range(40)]
+        report = breakeven_from_trades(_trades(wins + losses), variable_exits=True)
+
+        assert report.valid
+        assert report.variable_exits is True
+        avg_win = sum(pnl for _, pnl in wins) / len(wins)
+        avg_loss = -sum(pnl for _, pnl in losses) / len(losses)
+        assert report.breakeven_win_rate == pytest.approx(avg_loss / (avg_loss + avg_win))
+        assert report.win_relative_std is not None and report.win_relative_std > 0.05
+        assert report.loss_relative_std is not None and report.loss_relative_std > 0
+        assert report.reason is not None and "weighted average" in report.reason
+
+    def test_variable_exits_do_not_excuse_a_non_binary_distribution(self) -> None:
+        rows = [("take_profit", 0.8)] * 50 + [("stop_loss", -1.5)] * 40
+        rows += [("time_stop", 0.1)] * 10
+        report = breakeven_from_trades(_trades(rows), variable_exits=True)
+        assert not report.valid
+        assert report.reason is not None and "not binary" in report.reason
+
 
 class TestPrior:
     def test_baseline_numbers(self) -> None:
@@ -152,6 +174,39 @@ class TestPrior:
         prior = breakeven_prior(spec, _symbol_spec())
         assert not prior.valid
         assert prior.reason is not None
+
+    def test_variable_exits_need_a_measured_distance(self) -> None:
+        spec = _spec(
+            {
+                "stop_loss": {"type": "percent", "value": 0.15},
+                "take_profit": {"type": "percent", "value": 0.08},
+                "time_stop": None,
+                "signal_exit": None,
+            }
+        )
+        prior = breakeven_prior(spec, _symbol_spec())
+        assert not prior.valid
+        assert prior.variable_exits is True
+        assert prior.reason is not None and "no average distance" in prior.reason
+
+    def test_variable_exits_with_measured_distances_are_stated_as_an_average(self) -> None:
+        spec = _spec(
+            {
+                "stop_loss": {"type": "percent", "value": 0.15},
+                "take_profit": {"type": "percent", "value": 0.08},
+                "time_stop": None,
+                "signal_exit": None,
+            }
+        )
+        prior = breakeven_prior(
+            spec, _symbol_spec(),
+            stop_points=150.0, target_points=80.0,
+            stop_points_std=12.0, target_points_std=6.0,
+        )
+        assert prior.valid
+        assert prior.variable_exits is True
+        assert prior.breakeven_win_rate == pytest.approx(150 / 230, abs=1e-6)
+        assert any("sized per trade" in caveat for caveat in prior.caveats)
 
     def test_time_stop_adds_caveat(self) -> None:
         spec = _spec(

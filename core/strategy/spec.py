@@ -181,11 +181,44 @@ class Entry(_Model):
         return self
 
 
-class Level(_Model):
-    """Stop or target distance, in instrument points."""
+class PointsLevel(_Model):
+    """Stop or target distance, in instrument points. Fixed across instruments."""
 
     type: Literal["points"]
     value: float = Field(gt=0)
+
+
+class PercentLevel(_Model):
+    """Stop or target distance as a percentage of the entry price.
+
+    `value` is a percentage (0.15 means 0.15%), applied to the actual fill
+    price at entry - unlike the ATR level below, the entry price needs no
+    freezing: it exists exactly once, at the moment the trade opens.
+    """
+
+    type: Literal["percent"]
+    value: float = Field(gt=0)
+
+
+class AtrLevel(_Model):
+    """Stop or target distance as a multiple of an ATR indicator's value.
+
+    `indicator` must reference an `atr`-typed entry in the spec's
+    `indicators` list. The value used is the one at the signal bar (the last
+    closed bar when the trade was decided), frozen for the whole trade: this
+    is a fixed stop/target sized by volatility at entry, not a trailing stop,
+    which would require recomputing it bar by bar and is out of scope here.
+    """
+
+    type: Literal["atr"]
+    indicator: str = Field(min_length=1)
+    mult: float = Field(gt=0)
+
+
+Level = Annotated[
+    Union[PointsLevel, PercentLevel, AtrLevel],
+    Field(discriminator="type"),
+]
 
 
 class TimeStop(_Model):
@@ -314,6 +347,26 @@ class StrategySpec(_Model):
                             f"ref {operand.ref!r}: output {operand.output!r} "
                             f"does not exist. Available: {', '.join(outputs)}"
                         )
+
+        for level, where in (
+            (self.exit.stop_loss, "exit.stop_loss"),
+            (self.exit.take_profit, "exit.take_profit"),
+        ):
+            if not isinstance(level, AtrLevel):
+                continue
+            target = by_id.get(level.indicator)
+            if target is None:
+                known = ", ".join(sorted(by_id)) or "none"
+                raise ValueError(
+                    f"{where}: indicator {level.indicator!r} not found. "
+                    f"Defined: {known}"
+                )
+            if target.type != "atr":
+                raise ValueError(
+                    f"{where}: indicator {level.indicator!r} is of type "
+                    f"{target.type!r}, must be 'atr'"
+                )
+            referenced.add(level.indicator)
 
         for unused in sorted(seen - referenced):
             logger.warning(

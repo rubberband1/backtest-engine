@@ -31,6 +31,7 @@ from core.engine.costs import CommissionModel, CostModel, SpreadPolicy, SwapMode
 from core.metrics.breakeven import breakeven_from_trades
 from core.metrics.performance import PerformanceReport
 from core.serialization import json_safe
+from core.strategy.exits import has_variable_exits
 from core.strategy.spec import StrategySpec
 from core.version import ENGINE_VERSION
 
@@ -317,6 +318,7 @@ class RunStore:
         result: BacktestResult,
         strategy_report: PerformanceReport,
         benchmark_report: PerformanceReport | None = None,
+        spec: StrategySpec | None = None,
     ) -> RunMeta:
         path = self.path_for(run_id)
         meta = self.load_meta(run_id)
@@ -328,7 +330,10 @@ class RunStore:
         metrics = {
             "strategy": report_to_dict(strategy_report),
             "benchmark": report_to_dict(benchmark_report) if benchmark_report else None,
-            "breakeven": breakeven_from_trades(result.trades).as_dict(),
+            "breakeven": breakeven_from_trades(
+                result.trades,
+                variable_exits=has_variable_exits(spec.exit) if spec else False,
+            ).as_dict(),
             "execution": {
                 "signals_long": result.signals.counts["long"],
                 "signals_short": result.signals.counts["short"],

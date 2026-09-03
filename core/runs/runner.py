@@ -242,7 +242,7 @@ def execute_run(
             bars, symbol_spec.spec, spec.sizing, result.timeframe,
             config.initial_equity, costs, server_tz,
         )
-        return store.finish_run(run_id, result, strategy_report, benchmark)
+        return store.finish_run(run_id, result, strategy_report, benchmark, spec)
     except Exception as exc:
         store.fail_run(run_id, f"{type(exc).__name__}: {exc}")
         raise

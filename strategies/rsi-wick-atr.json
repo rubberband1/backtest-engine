@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "id": "rsi-wick-atr",
+  "name": "RSI touch + wick rejection, ATR exits",
+  "description": "The rsi-wick-baseline signal with exits normalized on volatility instead of fixed points: SL 2.0 ATR(14), TP 1.07 ATR(14), the same 1.875 risk/reward as the 150/80 point version. Exists to separate the strategy from the instrument: 150 points is 0.04% of price on gold and 0.14% on EURUSD, so the point-based version tests a different strategy on every symbol. No documented edge, same as the baseline.",
+  "instrument": { "symbol": "XAUUSD.r", "timeframe": "M1" },
+
+  "indicators": [
+    { "id": "rsi", "type": "rsi", "params": { "period": 9, "source": "close" } },
+    { "id": "atr", "type": "atr", "params": { "period": 14 } }
+  ],
+
+  "entry": {
+    "long": {
+      "op": "and",
+      "operands": [
+        { "op": "cross_below", "left": { "ref": "rsi" }, "right": { "const": 25 } },
+        { "op": "gte", "left": { "feature": "lower_wick_ratio" }, "right": { "const": 0.60 } },
+        { "op": "lte", "left": { "feature": "body_ratio" }, "right": { "const": 0.30 } }
+      ]
+    },
+    "short": {
+      "op": "and",
+      "operands": [
+        { "op": "cross_above", "left": { "ref": "rsi" }, "right": { "const": 75 } },
+        { "op": "gte", "left": { "feature": "upper_wick_ratio" }, "right": { "const": 0.60 } },
+        { "op": "lte", "left": { "feature": "body_ratio" }, "right": { "const": 0.30 } }
+      ]
+    }
+  },
+
+  "exit": {
+    "stop_loss": { "type": "atr", "indicator": "atr", "mult": 2.0 },
+    "take_profit": { "type": "atr", "indicator": "atr", "mult": 1.07 },
+    "time_stop": { "bars": 60 },
+    "signal_exit": null
+  },
+
+  "sizing": {
+    "type": "equity_per_step",
+    "equity_per_001_lot": 100,
+    "min_lot": 0.01,
+    "max_lot": 0.05
+  },
+
+  "risk": {
+    "max_open_positions": 1,
+    "cooldown_minutes": 20,
+    "max_trades_per_day": 20,
+    "max_spread_points": 30,
+    "session": null,
+    "news_filter": null
+  }
+}

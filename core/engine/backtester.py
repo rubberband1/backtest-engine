@@ -17,6 +17,13 @@ result is credible or a fantasy:
    way to know which came first, and the count must be watched.
 5. The time stop counts **session** bars, not array rows.
 6. The gates in `risk.py` are the same ones the future live runner will use.
+7. Stop and target distances come from the spec in points, in percent of the
+   entry price, or as a multiple of an ATR read on the **signal** bar - the
+   last closed bar when the trade was decided, since the execution bar's own
+   range does not exist yet. Whatever the source, the distance is fixed at
+   entry and never recomputed: this is a volatility-sized stop, not a
+   trailing one. If the ATR is still in warm-up the entry is skipped, never
+   filled with a fabricated distance.
 """
 from __future__ import annotations
 
@@ -30,12 +37,12 @@ import numpy as np
 import pandas as pd
 
 from core.data.provider import SymbolSpec, Timeframe
-from core.engine.costs import CostModel, money_per_point, points_to_price
+from core.engine.costs import CostModel, money_per_point
 from core.engine.risk import RiskGate, RiskState
 from core.engine.session import session_ordinals
 from core.engine.sizing import lots_for
 from core.strategy.evaluator import Signals, evaluate
-from core.strategy.spec import StrategySpec
+from core.strategy.spec import Level, StrategySpec
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +55,11 @@ TRADE_COLUMNS: tuple[str, ...] = (
     "direction",
     "entry_time",
     "entry_price",
+    # the levels actually placed, in price. With ATR or percent exits the
+    # distance is a function of the entry bar and cannot be reconstructed from
+    # the spec afterwards, so the trade record carries it.
+    "stop_level",
+    "target_level",
     "exit_time",
     "exit_price",
     "exit_reason",
@@ -180,10 +192,6 @@ class Backtester:
             else np.zeros(len(bars), dtype=bool)
         )
 
-        stop_points = self.strategy.exit.stop_loss.value if self.strategy.exit.stop_loss else None
-        target_points = (
-            self.strategy.exit.take_profit.value if self.strategy.exit.take_profit else None
-        )
         time_stop = self.strategy.exit.time_stop.bars if self.strategy.exit.time_stop else None
 
         state = RiskState()
@@ -214,7 +222,7 @@ class Backtester:
             if position is None and pending_entry:
                 position = self._try_open(
                     pending_entry, i, open_, spread_points, spread_price, times, realized,
-                    state, blocked, stop_points, target_points,
+                    state, blocked, signals.indicators,
                 )
             pending_entry = 0
 
@@ -279,6 +287,34 @@ class Backtester:
 
     # -- entry -----------------------------------------------------------
 
+    def _exit_distance(
+        self,
+        level: Level | None,
+        entry_price: float,
+        signal_bar: int,
+        indicators: dict[str, pd.Series],
+    ) -> tuple[float | None, bool]:
+        """Distance in price of a stop/target level, and whether it is usable.
+
+        `(None, True)` means the level is simply not configured; `(None,
+        False)` means it is configured but its indicator is still in warm-up,
+        which is a reason to skip the entry rather than to invent a distance.
+        """
+        if level is None:
+            return None, True
+        if level.type == "points":
+            return level.value * self.symbol.point, True
+        if level.type == "percent":
+            return entry_price * level.value / 100.0, True
+        if level.type == "atr":
+            # the signal bar is the last closed bar when the trade was
+            # decided: the execution bar's own range does not exist yet
+            value = float(indicators[level.indicator].iloc[signal_bar])
+            if not np.isfinite(value) or value <= 0:
+                return None, False
+            return value * level.mult, True
+        raise ValueError(f"unrecognized exit level type: {level.type}")
+
     def _try_open(
         self,
         direction: int,
@@ -290,8 +326,7 @@ class Backtester:
         equity: float,
         state: RiskState,
         blocked: Counter[str],
-        stop_points: float | None,
-        target_points: float | None,
+        indicators: dict[str, pd.Series],
     ) -> _Position | None:
         decision = self.gate.check_entry(times[i], float(spread_points[i]), state)
         if not decision.allowed:
@@ -308,15 +343,30 @@ class Backtester:
         entry_price = raw + spread_price[i] if direction > 0 else raw
         value = money_per_point(self.symbol, lots)
 
-        stop_level = target_level = None
-        if stop_points is not None:
-            distance = points_to_price(stop_points, self.symbol)
-            stop_level = entry_price - distance if direction > 0 else entry_price + distance
-        if target_points is not None:
-            distance = points_to_price(target_points, self.symbol)
-            target_level = entry_price + distance if direction > 0 else entry_price - distance
+        # entries are always executed one bar after the signal, so i - 1 is the
+        # bar whose close decided this trade
+        signal_bar = i - 1
+        stop_distance, stop_ready = self._exit_distance(
+            self.strategy.exit.stop_loss, entry_price, signal_bar, indicators
+        )
+        target_distance, target_ready = self._exit_distance(
+            self.strategy.exit.take_profit, entry_price, signal_bar, indicators
+        )
+        if not (stop_ready and target_ready):
+            blocked["exit_indicator_warmup"] += 1
+            return None
 
-        risk_money = (stop_points or 0.0) * value
+        stop_level = target_level = None
+        if stop_distance is not None:
+            stop_level = (
+                entry_price - stop_distance if direction > 0 else entry_price + stop_distance
+            )
+        if target_distance is not None:
+            target_level = (
+                entry_price + target_distance if direction > 0 else entry_price - target_distance
+            )
+
+        risk_money = (stop_distance / self.symbol.point * value) if stop_distance else 0.0
         state.register_entry(times[i], self.server_tz)
         return _Position(
             direction=direction,
@@ -420,6 +470,8 @@ class Backtester:
             "direction": position.direction,
             "entry_time": position.entry_time,
             "entry_price": position.entry_price,
+            "stop_level": position.stop_level if position.stop_level is not None else np.nan,
+            "target_level": position.target_level if position.target_level is not None else np.nan,
             "exit_time": exit_time,
             "exit_price": exit_price,
             "exit_reason": reason,

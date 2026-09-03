@@ -122,6 +122,49 @@ def test_no_exit_at_all() -> None:
         StrategySpec.from_dict(payload)
 
 
+def test_atr_and_percent_levels_are_accepted() -> None:
+    payload = baseline_payload()
+    payload["exit"]["stop_loss"] = {"type": "atr", "indicator": "atr", "mult": 2.0}
+    payload["exit"]["take_profit"] = {"type": "percent", "value": 0.15}
+    spec = StrategySpec.from_dict(payload)
+    assert spec.exit.stop_loss.type == "atr"
+    assert spec.exit.stop_loss.mult == 2.0
+    assert spec.exit.take_profit.type == "percent"
+    assert spec.exit.take_profit.value == 0.15
+
+
+def test_atr_level_pointing_at_a_missing_indicator() -> None:
+    payload = baseline_payload()
+    payload["exit"]["stop_loss"] = {"type": "atr", "indicator": "atr20", "mult": 2.0}
+    with pytest.raises(SpecError) as error:
+        StrategySpec.from_dict(payload)
+    message = str(error.value)
+    assert "atr20" in message and "Defined: atr, rsi" in message
+
+
+def test_atr_level_pointing_at_a_non_atr_indicator() -> None:
+    payload = baseline_payload()
+    payload["exit"]["stop_loss"] = {"type": "atr", "indicator": "rsi", "mult": 2.0}
+    with pytest.raises(SpecError, match="must be 'atr'"):
+        StrategySpec.from_dict(payload)
+
+
+def test_an_indicator_used_only_by_an_exit_is_not_reported_unused(caplog) -> None:
+    """The ATR of an ATR stop is referenced, even though no condition names it."""
+    payload = baseline_payload()
+    payload["exit"]["stop_loss"] = {"type": "atr", "indicator": "atr", "mult": 2.0}
+    with caplog.at_level("WARNING"):
+        StrategySpec.from_dict(payload)
+    assert "never referenced" not in caplog.text
+
+
+def test_a_level_needs_a_known_type() -> None:
+    payload = baseline_payload()
+    payload["exit"]["stop_loss"] = {"type": "atr_trailing", "indicator": "atr", "mult": 2.0}
+    with pytest.raises(SpecError):
+        StrategySpec.from_dict(payload)
+
+
 def test_entry_without_sides() -> None:
     payload = baseline_payload()
     payload["entry"] = {"long": None, "short": None}

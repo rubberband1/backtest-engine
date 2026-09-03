@@ -11,4 +11,4 @@ Semantic versioning, from the point of view of run results:
 Every bump gets an entry in ENGINE_CHANGELOG.md.
 """
 
-ENGINE_VERSION = "3.1.0"
+ENGINE_VERSION = "3.2.0"
