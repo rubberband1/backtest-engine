@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import importlib
 import json
+import time
 from pathlib import Path
 from typing import Any, Iterator
 
@@ -709,6 +710,46 @@ def test_batch_cells_land_in_the_run_store(client: TestClient) -> None:
     detail = client.get(f"/api/runs/{cell['run_id']}")
     assert detail.status_code == 200
     assert detail.json()["config"]["initial_equity"] == 777.0
+
+
+def test_a_screening_campaign_runs_as_a_polled_job(client: TestClient) -> None:
+    """A campaign is minutes of work: it must not block the request."""
+    started = client.post(
+        "/api/screen",
+        json={
+            "strategy_ids": ["api-test"],
+            "symbols": [SYMBOL, OTHER_SYMBOL],
+            "timeframes": ["M1"],
+            "config": config(),
+            "min_trades": 5,
+            "permutation_iterations": 10,
+        },
+    )
+    assert started.status_code == 200, started.text
+    job = started.json()
+    assert job["status"] == "running"
+    assert job["total_cells"] == 2
+
+    for _ in range(120):
+        job = client.get(f"/api/screen/{job['job_id']}").json()
+        if job["status"] != "running":
+            break
+        time.sleep(0.5)
+
+    assert job["status"] == "done", job.get("error")
+    report = job["report"]
+    # both cells count as attempts even if one never reaches a backtest
+    assert report["panel"]["attempts"] == 2
+    assert len(report["cells"]) == 2
+    assert report["verdict"]
+
+
+def test_an_unknown_screening_job_says_where_the_campaigns_live(
+    client: TestClient,
+) -> None:
+    response = client.get("/api/screen/screen-nope")
+    assert response.status_code == 404
+    assert "kept in memory" in response.json()["detail"]
 
 
 def test_a_grid_adds_its_candidates_to_the_trial_family(client: TestClient) -> None:

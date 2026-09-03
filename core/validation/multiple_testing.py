@@ -167,20 +167,87 @@ def sharpe_per_trade(pnl: Sequence[float] | np.ndarray) -> float:
 # -- deflated Sharpe ratio -----------------------------------------------
 
 
+def expected_max_sharpe(trials: int, variance_across_trials: float) -> float:
+    """The per-trade Sharpe the best of N independent trials reaches by luck.
+
+    Bailey & Lopez de Prado's expected maximum of N draws from a normal with
+    this variance: the score a search of that size hands out for free, and
+    therefore the level an observed Sharpe has to clear before it means
+    anything at all.
+    """
+    n = max(float(trials), 2.0)
+    return math.sqrt(max(variance_across_trials, 0.0)) * (
+        (1.0 - EULER_MASCHERONI) * float(stats.norm.ppf(1.0 - 1.0 / n))
+        + EULER_MASCHERONI * float(stats.norm.ppf(1.0 - 1.0 / (n * math.e)))
+    )
+
+
+def required_sharpe_per_trade(
+    trials: int,
+    variance_across_trials: float,
+    observations: int,
+    skewness: float = 0.0,
+    kurtosis: float = 3.0,
+    confidence: float = 0.95,
+) -> float | None:
+    """The observed per-trade Sharpe needed for a DSR of at least `confidence`.
+
+    The inverse of the deflated Sharpe: given how many configurations were
+    tried, how much their Sharpes vary and how many trades the winner made,
+    this is the score the winner has to show before the search stops being a
+    sufficient explanation for it. Solved by bisection - the probability is
+    monotone in the observed Sharpe but has no closed-form inverse.
+    """
+    if observations < 3 or variance_across_trials <= 0:
+        return None
+    benchmark = expected_max_sharpe(trials, variance_across_trials)
+
+    def probability(observed: float) -> float:
+        denominator = 1.0 - skewness * observed + (kurtosis - 1.0) / 4.0 * observed**2
+        if denominator <= 0:
+            return 0.0
+        numerator = (observed - benchmark) * math.sqrt(observations - 1)
+        return float(stats.norm.cdf(numerator / math.sqrt(denominator)))
+
+    low, high = benchmark, benchmark + 1.0
+    for _ in range(60):  # widen until the target is bracketed
+        if probability(high) >= confidence:
+            break
+        low, high = high, high + 1.0
+    else:
+        return None
+    for _ in range(200):
+        mid = (low + high) / 2.0
+        if probability(mid) < confidence:
+            low = mid
+        else:
+            high = mid
+    return float(high)
+
+
 def deflated_sharpe(
     pnl: Sequence[float] | np.ndarray,
     trial_sharpes: Sequence[float],
     annualized: float | None = None,
+    trials_override: int | None = None,
 ) -> DeflatedSharpe:
     """DSR of the observed series given the Sharpe spread across the trials.
 
     `trial_sharpes` must be per-trade Sharpes of every configuration tried on
     the same data: their variance is what says how much of the winner's score
     a search of that size buys for free.
+
+    `trials_override` separates *how many attempts were made* from *how many
+    Sharpes were observed*. A screening funnel stops some configurations
+    before they are ever backtested, but they were attempts all the same and
+    they count towards the selection effect: the caller passes the full
+    attempt count here, and the variance is estimated on the subset that
+    produced a Sharpe. That those two populations have the same spread is an
+    assumption, and the report that uses it says so.
     """
     values = np.asarray(pnl, dtype="float64")
     values = values[np.isfinite(values)]
-    trials = len(trial_sharpes)
+    trials = int(trials_override) if trials_override is not None else len(trial_sharpes)
     observations = int(len(values))
 
     if observations < 3:
@@ -206,6 +273,19 @@ def deflated_sharpe(
         )
 
     observed = sharpe_per_trade(values)
+    if len(trial_sharpes) < 2:
+        return DeflatedSharpe(
+            valid=False,
+            reason=(
+                f"{trials} attempts but only {len(trial_sharpes)} of them produced a "
+                f"Sharpe: the spread across trials cannot be estimated from one "
+                f"observation"
+            ),
+            trials=trials,
+            observations=observations,
+            observed_sharpe_per_trade=observed,
+            observed_sharpe_annualized=annualized,
+        )
     variance = float(np.var(np.asarray(trial_sharpes, dtype="float64"), ddof=1))
     if variance <= 0:
         return DeflatedSharpe(
@@ -221,13 +301,8 @@ def deflated_sharpe(
             variance_across_trials=variance,
         )
 
-    # Expected maximum Sharpe of N independent trials drawn from a normal with
-    # this variance: the score the search hands out for free.
-    n = float(trials)
-    expected_max = math.sqrt(variance) * (
-        (1.0 - EULER_MASCHERONI) * float(stats.norm.ppf(1.0 - 1.0 / n))
-        + EULER_MASCHERONI * float(stats.norm.ppf(1.0 - 1.0 / (n * math.e)))
-    )
+    # the score the search hands out for free, given how many attempts it made
+    expected_max = expected_max_sharpe(trials, variance)
 
     skew = float(stats.skew(values, bias=False))
     # non-excess kurtosis: a normal series scores 3, which is what the

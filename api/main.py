@@ -38,6 +38,7 @@ from core.data.cache import ParquetCache
 from core.data.provider import Timeframe
 from core.data.quality import check_quality
 from core.engine.backtester import BacktestConfig, run_backtest
+from core.research.screen import run_screen
 from core.runs.runner import (
     DataUnavailable,
     EnvironmentUnavailable,
@@ -1208,6 +1209,92 @@ def post_batch(request: s.BatchRequest) -> s.BatchResponse:
             temporary.unlink(missing_ok=True)
 
     return s.BatchResponse(**report.as_dict())
+
+
+# -- screening campaign --------------------------------------------------
+
+# A campaign is minutes of work, not seconds: it runs as a job and the client
+# polls it. Kept in memory on purpose - the artefact worth keeping is the
+# report the caller saves, and every run inside it is already in the store.
+_screens: dict[str, dict[str, Any]] = {}
+SCREEN_HISTORY = 20
+
+
+def _run_screen_job(job_id: str, request: s.ScreenRequest) -> None:
+    job = _screens[job_id]
+
+    def progress(index: int, total: int, outcome: Any) -> None:
+        job["completed_cells"] = index
+        job["total_cells"] = total
+        job["current"] = (
+            f"{outcome.strategy_id} · {outcome.symbol} {outcome.timeframe}"
+        )
+
+    try:
+        paths = []
+        for strategy_id in request.strategy_ids:
+            path = STRATEGIES_DIR / f"{strategy_id}.json"
+            if not path.exists():
+                raise FileNotFoundError(f"no strategy file for id {strategy_id!r}")
+            paths.append(path)
+
+        report = run_screen(
+            strategies=paths,
+            symbols=request.symbols,
+            timeframes=request.timeframes,
+            base_config=_run_config(request.config),
+            cache_dir=CACHE_DIR,
+            runs_dir=RUNS_DIR,
+            min_trades=request.min_trades,
+            permutation_iterations=request.permutation_iterations,
+            on_cell=progress,
+        )
+        job["report"] = report.as_dict()
+        job["status"] = "done"
+    except Exception as exc:  # a failed campaign is a status, not a 500
+        logger.exception("screening job %s failed", job_id)
+        job["status"] = "error"
+        job["error"] = f"{type(exc).__name__}: {exc}"
+    finally:
+        job["finished_at"] = datetime.now(timezone.utc)
+
+
+@app.post("/api/screen", response_model=s.ScreenJobOut, tags=["research"])
+def post_screen(request: s.ScreenRequest) -> s.ScreenJobOut:
+    """Starts a screening campaign and returns the job to poll."""
+    total = len(request.strategy_ids) * len(request.symbols) * len(request.timeframes)
+    job_id = f"screen-{int(time.time() * 1000):x}"
+    _screens[job_id] = {
+        "job_id": job_id,
+        "status": "running",
+        "started_at": datetime.now(timezone.utc),
+        "finished_at": None,
+        "completed_cells": 0,
+        "total_cells": total,
+        "current": None,
+        "error": None,
+        "report": None,
+    }
+
+    # oldest jobs are dropped: the reports live in the client, the runs in the store
+    for stale in list(_screens)[:-SCREEN_HISTORY]:
+        _screens.pop(stale, None)
+
+    assert _executor is not None
+    _executor.submit(_run_screen_job, job_id, request)
+    return s.ScreenJobOut(**_screens[job_id])
+
+
+@app.get("/api/screen/{job_id}", response_model=s.ScreenJobOut, tags=["research"])
+def get_screen(job_id: str) -> s.ScreenJobOut:
+    job = _screens.get(job_id)
+    if job is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"no screening job {job_id}: campaigns are kept in memory and "
+            f"the last {SCREEN_HISTORY} are available until the backend restarts",
+        )
+    return s.ScreenJobOut(**job)
 
 
 @app.get("/api/health", tags=["data"])

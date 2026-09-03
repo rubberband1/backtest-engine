@@ -848,3 +848,104 @@ class BatchResponse(Model):
     consistency: ConsistencyOut
     verdict: str
     warnings: list[str] = Field(default_factory=list)
+
+
+# -- screening campaign --------------------------------------------------
+
+
+class ScreenRequest(Model):
+    strategy_ids: list[str] = Field(min_length=1)
+    symbols: list[str] = Field(min_length=1)
+    timeframes: list[str] = Field(min_length=1)
+    config: "RunConfigIn"
+    min_trades: int = Field(default=30, ge=1)
+    permutation_iterations: int = Field(default=200, ge=10, le=5000)
+
+
+class ScreenCellOut(Model):
+    strategy_id: str
+    symbol: str
+    timeframe: str
+    stage_reached: str
+    status: str
+    error: str | None = None
+
+    gate_passed: bool | None = None
+    gate_signals: int | None = None
+    gate_best_net_points: float | None = None
+    gate_best_p_value: float | None = None
+    gate_verdict: str | None = None
+    expected_ambiguous_share: float | None = None
+    ambiguity_flag: bool | None = None
+
+    run_id: str | None = None
+    bars: int | None = None
+    trades: int | None = None
+    net_pnl: float | None = None
+    final_equity: float | None = None
+    sharpe_per_trade: float | None = None
+    sharpe_annualized: float | None = None
+    mean_r: float | None = None
+    win_rate: float | None = None
+    max_drawdown_pct: float | None = None
+    p_value: float | None = None
+    ambiguous_share: float | None = None
+    band_money: float | None = None
+    top_gate: str | None = None
+    top_gate_share: float | None = None
+    gate_warnings: list[str] = Field(default_factory=list)
+
+    permutation_p_value: float | None = None
+    permutation_kind: str | None = None
+    permutation_iterations: int | None = None
+
+
+class TrialPanelOut(Model):
+    """The correction owed for the size of the campaign."""
+
+    attempts: int
+    cells_backtested: int
+    cells_permuted: int
+    sharpes_observed: int
+    variance_across_trials: float | None = None
+    expected_max_sharpe: float | None = None
+    required_sharpe_per_trade: float | None = None
+    confidence: float
+    alpha: float
+    bonferroni_threshold: float | None = None
+    best_strategy: str | None = None
+    best_sharpe_per_trade: float | None = None
+    best_clears_required: bool | None = None
+    survivors_after_correction: int
+    verdict: str
+    assumptions: list[str] = Field(default_factory=list)
+
+
+class ScreenReportOut(Model):
+    strategies: list[str]
+    symbols: list[str]
+    timeframes: list[str]
+    period_start: datetime | None = None
+    period_end: datetime | None = None
+    initial_equity: float
+    cells: list[ScreenCellOut]
+    panel: TrialPanelOut
+    thresholds: list[ThresholdRowOut] = Field(default_factory=list)
+    elapsed_seconds: float
+    engine_version: str
+    verdict: str
+    warnings: list[str] = Field(default_factory=list)
+
+
+class ScreenJobOut(Model):
+    """A campaign takes minutes: it is a job, polled, not a blocked request."""
+
+    job_id: str
+    status: Literal["running", "done", "error"]
+    started_at: datetime
+    finished_at: datetime | None = None
+    completed_cells: int = 0
+    total_cells: int = 0
+    current: str | None = None
+    error: str | None = None
+    report: ScreenReportOut | None = None
