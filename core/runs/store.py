@@ -30,6 +30,7 @@ from core.engine.backtester import BacktestResult
 from core.engine.costs import CommissionModel, CostModel, SpreadPolicy, SwapModel
 from core.metrics.ambiguity import uncertainty_band
 from core.metrics.breakeven import breakeven_from_trades
+from core.metrics.gates import gate_accounting
 from core.metrics.performance import PerformanceReport
 from core.serialization import json_safe
 from core.strategy.exits import has_variable_exits
@@ -359,6 +360,14 @@ class RunStore:
                     else {}
                 ),
             },
+            # what happened to the signals that never became trades: a gate
+            # rejecting most of them is the strategy, not a safety margin
+            "gates": gate_accounting(
+                result.blocked,
+                signals=result.signals.counts["long"] + result.signals.counts["short"],
+                executed=int(len(result.trades)),
+                entry_attempts=result.entry_attempts,
+            ).as_dict(),
         }
         (path / METRICS_FILE).write_text(
             json.dumps(json_safe(metrics), indent=2, ensure_ascii=False) + "\n",

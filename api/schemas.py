@@ -301,6 +301,28 @@ class ExecutionOut(Model):
     exit_reasons: dict[str, int] = Field(default_factory=dict)
 
 
+class GateRowOut(Model):
+    code: str
+    label: str
+    rejected: int
+    share: float
+    exceeds_threshold: bool
+
+
+class GatesOut(Model):
+    """Signals in, trades out, and every rejection in between."""
+
+    signals: int
+    entry_attempts: int
+    executed: int
+    rejected: int
+    executed_share: float | None = None
+    rows: list[GateRowOut] = Field(default_factory=list)
+    threshold: float
+    warnings: list[str] = Field(default_factory=list)
+    verdict: str
+
+
 class RunSummaryOut(Model):
     run_id: str
     status: RunStatus

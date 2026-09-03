@@ -359,7 +359,7 @@ def test_zero_equity_blocks_the_entry() -> None:
     )
     result = run(bars, equity=0.0)
     assert len(result.trades) == 0
-    assert result.blocked["insufficient equity"] == 1
+    assert result.blocked["insufficient_equity"] == 1
 
 
 def test_multiple_open_positions_not_supported() -> None:

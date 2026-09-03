@@ -39,12 +39,25 @@ class RiskState:
 class RiskDecision:
     allowed: bool
     reason: str | None = None
+    code: str | None = None
 
     def __bool__(self) -> bool:
         return self.allowed
 
 
 ALLOWED = RiskDecision(True)
+
+# Stable identifiers for the accounting. The `reason` carries the numbers of
+# the single decision and is therefore unique per bar; counting on it produces
+# one bucket per spread value instead of one per gate, which is how a gate
+# rejecting half the signals stays invisible.
+GATE_CODES: tuple[str, ...] = (
+    "max_open_positions",
+    "max_spread_points",
+    "cooldown",
+    "max_trades_per_day",
+    "session",
+)
 
 
 def _in_session(moment: datetime, session: Session, server_tz: tzinfo) -> bool:
@@ -72,13 +85,16 @@ class RiskGate:
     ) -> RiskDecision:
         if state.open_positions >= self.risk.max_open_positions:
             return RiskDecision(
-                False, f"open positions {state.open_positions} >= {self.risk.max_open_positions}"
+                False,
+                f"open positions {state.open_positions} >= {self.risk.max_open_positions}",
+                "max_open_positions",
             )
 
         if self.risk.max_spread_points is not None and spread_points > self.risk.max_spread_points:
             return RiskDecision(
                 False,
                 f"spread {spread_points:.0f} > max {self.risk.max_spread_points:.0f} points",
+                "max_spread_points",
             )
 
         if self.risk.cooldown_minutes and state.last_exit_time is not None:
@@ -88,6 +104,7 @@ class RiskGate:
                     False,
                     f"cooldown: {elapsed.total_seconds() / 60:.0f} min of the "
                     f"{self.risk.cooldown_minutes} required",
+                    "cooldown",
                 )
 
         if self.risk.max_trades_per_day is not None:
@@ -97,6 +114,7 @@ class RiskGate:
                     False,
                     f"reached {self.risk.max_trades_per_day} trades in "
                     f"server day {today}",
+                    "max_trades_per_day",
                 )
 
         if self.risk.session is not None and not _in_session(
@@ -106,6 +124,7 @@ class RiskGate:
                 False,
                 f"outside session {self.risk.session.start}-{self.risk.session.end} "
                 f"({self.risk.session.timezone})",
+                "session",
             )
 
         return ALLOWED

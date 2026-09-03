@@ -97,6 +97,9 @@ class BacktestResult:
     initial_equity: float
     symbol: str
     timeframe: Timeframe
+    # signals that reached the entry stage, i.e. the denominator of the gate
+    # accounting: a signal born while a position is open is one of these too
+    entry_attempts: int = 0
 
     @property
     def ambiguous_trades(self) -> int:
@@ -202,6 +205,7 @@ class Backtester:
         position: _Position | None = None
         pending_entry: int = 0
         pending_exit: ExitReason | None = None
+        entry_attempts = 0
 
         for i in range(len(bars)):
             # 1. exits decided on the previous close: filled at the open price
@@ -220,6 +224,7 @@ class Backtester:
 
             # 2. entries decided on the previous close
             if position is None and pending_entry:
+                entry_attempts += 1
                 position = self._try_open(
                     pending_entry, i, open_, spread_points, spread_price, times, realized,
                     state, blocked, signals.indicators,
@@ -248,11 +253,19 @@ class Backtester:
                     pending_exit = "signal_exit"
 
             # 5. new signals from this bar's close
-            if position is None and pending_exit is None:
-                if long_signal[i] and not short_signal[i]:
-                    pending_entry = 1
-                elif short_signal[i] and not long_signal[i]:
-                    pending_entry = -1
+            signal = 0
+            if long_signal[i] and not short_signal[i]:
+                signal = 1
+            elif short_signal[i] and not long_signal[i]:
+                signal = -1
+            if signal:
+                if position is None and pending_exit is None:
+                    pending_entry = signal
+                else:
+                    # a signal born while the engine is already committed never
+                    # reaches the risk gates: counting it here is the only way
+                    # it does not silently vanish from the accounting
+                    blocked["position_open"] += 1
 
             equity_curve[i] = realized + self._floating(position, close[i], spread_price[i])
 
@@ -282,7 +295,7 @@ class Backtester:
         self._log_summary(frame, blocked)
         return BacktestResult(
             frame, equity, blocked, signals, self.config.initial_equity,
-            self.strategy.instrument.symbol, timeframe,
+            self.strategy.instrument.symbol, timeframe, entry_attempts,
         )
 
     # -- entry -----------------------------------------------------------
@@ -330,12 +343,14 @@ class Backtester:
     ) -> _Position | None:
         decision = self.gate.check_entry(times[i], float(spread_points[i]), state)
         if not decision.allowed:
-            blocked[str(decision.reason).split(":")[0]] += 1
+            # by code, never by the human reason: that one carries the numbers
+            # of the single decision and would give one bucket per spread value
+            blocked[decision.code or "risk_gate"] += 1
             return None
 
         lots = lots_for(self.strategy.sizing, equity, self.symbol)
         if lots <= 0:
-            blocked["insufficient equity"] += 1
+            blocked["insufficient_equity"] += 1
             return None
 
         raw = float(open_[i])
