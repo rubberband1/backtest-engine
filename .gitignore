@@ -1,30 +1,47 @@
+# A pattern without a leading slash matches at EVERY depth, not just at the
+# root. That is how `runs/` — meant for the persisted run archive — also
+# matched `core/runs/`, and kept the run store, the orchestration and the
+# golden snapshots out of the repository for two entire phases without a
+# single error message. Anything that describes a specific directory of THIS
+# repository is therefore anchored with a leading slash; only patterns that
+# legitimately apply at any depth (tool caches, build metadata, file
+# extensions) are left unanchored.
+
+# -- tool artefacts, legitimately at any depth ---------------------------
 __pycache__/
 *.py[cod]
-.venv/
-venv/
 *.egg-info/
-build/
-dist/
-
-# market data cache: regenerable, heavy
-data_cache/
-*.parquet
-*.hc
-
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
-
-.env
-*.log
-.temp/
-
 .vscode/
 .idea/
+node_modules/
 
-# frontend
-ui/node_modules/
-ui/dist/
+# -- secrets and machine-local files -------------------------------------
+.env
+*.log
+*.pkl
 
-# persisted runs: regenerable, heavy
-runs/
+# -- root-only directories, anchored -------------------------------------
+# Each of these would otherwise swallow a package of the same name:
+# `core/build/`, `core/dist/` (distributions, in a repo full of them),
+# `core/logs/`, `core/runs/` — the one that actually happened.
+/.venv/
+/venv/
+/build/
+/dist/
+/logs/
+/.temp/
+
+# -- regenerable data, heavy ---------------------------------------------
+/data_cache/
+/runs/
+*.hc
+# Cached bar data. The two directories above already hold all of it; this
+# extension rule is the belt to their braces, and the reason a future test
+# fixture must not be stored as .parquet.
+*.parquet
+
+# -- frontend build output -----------------------------------------------
+/ui/dist/
