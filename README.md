@@ -30,17 +30,20 @@ core/data/hc_reader.py     decoder for MT5's .hc cache (offline history)
 core/indicators/           pure functions + name -> function registry
 core/strategy/             pydantic spec, bar features, evaluator
 core/engine/               costs, sizing, risk gates, backtester
-core/metrics/              performance, break-even win rate, buy & hold benchmark
+core/strategy/exits.py     exit distances in points, for the a-priori reports
+core/metrics/              performance, break-even, buy & hold, uncertainty band, gates
 core/research/edge.py      gate zero: does the signal beat the spread?
+core/research/screen.py    screening funnel + the campaign's own trial count
 core/runs/                 run store, orchestration, golden snapshots
 core/validation/           walk-forward, permutation, multiple testing, tick resolve
 core/batch/                same spec over many instruments + cross-sectional consistency
 core/version.py            engine version (single source of truth)
 api/                       FastAPI, 127.0.0.1 only
 ui/                        Vite + React + TypeScript
-strategies/                the JSON specs
+strategies/                the JSON specs, including the library of classics
 tests/                     pytest; integration tests are marked `mt5`
 scripts/run_batch.py       batch runner driven by a YAML file
+scripts/run_screen.py      screening campaign driven by a YAML file
 run.py                     starts everything and opens the browser
 ```
 
@@ -188,9 +191,43 @@ pointing to existing indicators, correct outputs for multi-output
 indicators, parameters consistent with the type. An error lists every
 problem with the field path.
 
-`stop_loss`/`take_profit` accept only `type: "points"`; `risk.news_filter`
-must be `null` (it arrives with the live runner). A declared but never
-referenced indicator produces a warning, not an error.
+`risk.news_filter` must be `null` (it arrives with the live runner). A
+declared but never referenced indicator produces a warning, not an error —
+an ATR referenced only by an exit level counts as referenced.
+
+### Exit levels
+
+`stop_loss` and `take_profit` take three shapes, and which one is used
+decides whether a spec means the same thing on two instruments:
+
+```json
+{"type": "points",  "value": 150}
+{"type": "percent", "value": 0.15}
+{"type": "atr", "indicator": "atr", "mult": 2.0}
+```
+
+150 points is 0.04% of price on gold and 0.14% on EURUSD: a point-based spec
+run across ten instruments is a family of related strategies, not one
+strategy ten times. The percent level is a share of the actual entry price;
+the ATR level is a multiple of an ATR **read on the signal bar** — the last
+closed bar when the trade was decided, since the execution bar's own range
+does not exist yet — and frozen for the life of the trade. That is a
+volatility-sized stop, not a trailing one: recomputing it bar by bar is a
+different mechanism and is deliberately out of scope.
+
+An ATR still in warm-up does not produce a fabricated distance: the entry is
+skipped and counted under `exit_indicator_warmup`. Trades record the
+`stop_level` and `target_level` they were actually given, because with a
+variable distance those levels cannot be reconstructed from the spec
+afterwards, and the tick resolution needs them.
+
+Normalizing the exits does **not** normalize the cost of trading. Measured on
+the ten instruments at M1: switching the baseline from 150/80 points to
+2.0/1.07 ATR moved the spread from 6.3% of the stop distance to 21% of it on
+average, because M1 volatility is small next to the spread on oil and silver.
+The cross-instrument dispersion of mean R got wider, not narrower (std 0.066
+→ 0.164). ATR sizing equalizes exposure to volatility; it does nothing about
+the spread-to-volatility ratio, which varies just as much across instruments.
 
 ### Evaluator
 
@@ -317,16 +354,41 @@ verifies that a trend is not mistaken for an edge.
 
 ## Persisted runs
 
-`runs/<run_id>/` with `spec.json`, `config.json`, `trades.parquet`,
-`equity.parquet`, `metrics.json`, `meta.json`. They open with an editor and
-read with pandas.
+`runs/<run_id>/` with `spec.json`, `config.json`, `symbol_spec.json`,
+`trades.parquet`, `equity.parquet`, `metrics.json`, `meta.json`. They open
+with an editor and read with pandas.
 
 `run_id` is **deterministic**: a hash of spec + configuration + data
-fingerprint. Relaunching the same thing neither recomputes nor duplicates;
-changing a parameter, the spread or a single candle produces a different id,
-and the old run stays there documenting how things were. The data
-fingerprint hashes the bar bytes, not the dates: if the broker rewrites a
-candle, the time range does not notice — the hash does.
+fingerprint + the instrument's cost fields. Relaunching the same thing
+neither recomputes nor duplicates; changing a parameter, the spread or a
+single candle produces a different id, and the old run stays there
+documenting how things were. The data fingerprint hashes the bar bytes, not
+the dates: if the broker rewrites a candle, the time range does not notice —
+the hash does.
+
+### Why the SymbolSpec is part of the identity
+
+The same batch, run twice, once gave XTIUSD -21.05 and once -19.86 under
+identical spec and data hashes: the broker had changed its swap rates in
+between, and nothing in the run recorded it. So each run now writes the full
+instrument spec it used, with the timestamp it was read at, and `run_id`
+covers the fields that decide what a trade costs — point, digits,
+contract_size, tick_value, tick_size, swap_long, swap_short and the volume
+limits. Name, currency and trade mode stay out: a broker relabeling does not
+invalidate an id.
+
+The drift is small and constant. Regenerating the golden reference between
+two sessions moved the baseline's final equity from 89.60292671 to
+89.60059376 with no engine change at all: `tick_value` had gone from
+0.8628276588 to 0.8630212648, 0.02% of EUR/USD movement on an account in
+EUR holding an instrument quoted in USD. Replayed against the pinned spec,
+the engine reproduces the old figure exactly.
+
+A run without `symbol_spec.json` — written before this existed — is reported
+as "spec not registered", never assumed to have used the numbers on disk
+today. Walk-forward, permutation, multiple testing and tick resolution all
+revalidate a run against its own pinned spec rather than re-reading the live
+one, or the drift would come back in through the side door.
 
 ## Engine versioning and the golden test
 
@@ -419,13 +481,39 @@ Every p-value here is two-sided on mean trade PnL, so on a losing strategy a
 small p means "reliably losing". The sign travels next to the p-value in
 every row for that reason.
 
+### The uncertainty band, on every run
+
+When one bar touches both stop and target the engine assumes the stop. On the
+baseline that assumption was worth about twelve points of final equity over
+eleven trades out of 134 — the difference between a run that loses 10% and
+one that gains 1.5%. An assumption that decides the sign of the result is not
+a footnote, so every run reports it as a band:
+
+- **conservative** — every ambiguous trade exits on its stop. What the engine
+  computed, and the lower bound.
+- **optimistic** — every ambiguous trade exits on its target. The upper bound,
+  and not a number to quote: it is there to size the room the assumption
+  occupies.
+
+Above a 5% share of ambiguous trades the run is declared not conclusive at
+bar resolution, and the UI says so next to the equity rather than under it.
+
+Gate zero estimates the same quantity **before** the backtest, from the
+distance between the two levels and the distribution of bar ranges: among the
+bars able to reach a level at all, what share could reach both. It is an
+upper bound and a loose one — measured against realized runs it lands three
+to five times above the actual share (23% against a realized 8.2% on the M1
+baseline, ~7% against 0–1.3% on H1 and M15 cells) — so its warning threshold
+is set on its own scale, at 20%. What it buys is dropping an untestable
+configuration before spending a backtest on it.
+
 ### Tick resolution of ambiguous trades
 
-When one bar touches both stop and target the engine assumes the stop. That
-is the right default and it is still an assumption. `tick_resolve` pulls the
-ticks of the exit bar and asks which level came first, reading a long on the
-bid and a short on the ask exactly as the engine prices exits, then reports
-the delta against the conservative assumption.
+`tick_resolve` pulls the ticks of the exit bar and asks which level came
+first, reading a long on the bid and a short on the ask exactly as the engine
+prices exits, then reports the delta against the conservative assumption. The
+resolved figure always lands inside the band above: both use the same
+accounting.
 
 Missing ticks, a closed terminal, or a period older than the broker's tick
 history are reported as unresolved and counted. Nothing is assumed in their
@@ -472,7 +560,40 @@ magnitude.
 A caveat the tool cannot fix for you: a stop expressed in **points** is not
 the same distance on two instruments. 150 points is 0.04% of price on gold
 and 0.14% on EURUSD, so a cross-instrument batch of a point-based spec is
-testing a family of related strategies, not one strategy ten times.
+testing a family of related strategies, not one strategy ten times. ATR-based
+exits fix that half of the problem and not the other half — see *Exit levels*.
+
+## Screening a library of strategies
+
+```
+python -m scripts.run_screen campaign.yaml --json report.json --csv table.csv
+```
+
+A funnel in three stages of increasing cost: gate zero on every cell,
+a backtest only where the gate passes, a permutation only on the survivors.
+Spending a thousand resampled backtests on a signal with no directionality
+produces a p-value about noise.
+
+**The trial count is the point.** Three hundred backtests are three hundred
+chances to be lucky: at the 5% level about fifteen come back "significant"
+with no edge anywhere in the data. The campaign therefore counts every cell
+it *started* — including those stopped at gate zero, which were attempts all
+the same — and states what an observed Sharpe must reach before that count
+stops explaining it. The variance of the Sharpe across trials is estimated on
+the cells that reached a backtest and assumed to hold for the rest; that
+assumption is printed with the result, as is the fact that cells sharing an
+instrument or a strategy are not independent, which makes the correction
+generous rather than strict.
+
+`strategies/` holds ten classic rules — moving-average crossover, RSI and
+Bollinger mean reversion, Bollinger and Donchian breakouts, MACD, stochastic,
+ROC momentum, an EMA trend filter and a volatility-confirmed breakout — each
+with the canonical parameters from its source, ATR exits so the files are
+comparable across instruments, and, written in the file itself, whether it is
+mean reversion or trend following and **which timeframe it was born on**.
+Nine of the ten were designed for daily bars; running them on M5 is a
+transplant, and the description says so rather than letting the table imply
+otherwise.
 
 ## API
 
@@ -519,15 +640,20 @@ Pages:
 - **Run** — form with symbol (and which have cached data), timeframe, period
   with the cache bounds shown next to the fields, cost policy and
   commission. Two buttons: "Check edge" (fast) and "Run backtest".
-- **Result** — equity and drawdown aligned on the same axis, metrics next to
-  the buy & hold with the unsustainable-drawdown note, break-even win rate
-  next to the realized one, execution (signals, exits, gates) and paginated
-  trades with the ambiguous ones highlighted.
+- **Result** — the uncertainty band directly under the headline numbers
+  (conservative, optimistic, what the gap is worth), equity and drawdown
+  aligned on the same axis, metrics next to the buy & hold with the
+  unsustainable-drawdown note, break-even win rate next to the realized one,
+  the risk-gate table with a warning on any gate above 20% of the signals,
+  the instrument specification the run used with its read timestamp, and
+  paginated trades with the ambiguous ones highlighted.
 - **Compare** — two or more runs overlaid, curves normalized to 100, metrics
   side by side with the delta against the first and the "better" direction
   declared per metric. The config fields that differ between the runs are
-  shown under each column and as rows; identical configs are declared as
-  such. Warns if the runs are on different instruments or periods.
+  shown under each column and as rows; the SymbolSpec fields that differ get
+  their own flagged section, because those change what a trade costs.
+  Identical configs are declared as such. Warns if the runs are on different
+  instruments or periods, or if one predates SymbolSpec pinning.
 - **Validation** — walk-forward (concatenated OOS curve, per-window table,
   IS/OOS degradation with standard errors, parameter stability), permutation
   with the null histogram and the real strategy marked on it, multiple
@@ -536,6 +662,12 @@ Pages:
 - **Batch** — the same spec across instruments, a sortable symbol x metric
   table with the standard error next to each estimate, and the
   cross-sectional consistency row in the lead position.
+- **Screen** — a campaign over strategies x instruments x timeframes, run as
+  a polled job whose id lives in the URL so a reload reattaches instead of
+  losing twenty minutes of work. The trial-count panel sits above the table
+  and stays there: a row with a good-looking equity is marked **not
+  significant** unless its Sharpe clears the threshold corrected for the size
+  of the campaign.
 
 Non-negotiable choices applied: tabular digits everywhere, **times always in
 UTC and labeled as such** (the MT5 server clock is Europe/Athens, which is

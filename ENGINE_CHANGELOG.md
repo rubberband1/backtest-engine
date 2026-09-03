@@ -18,6 +18,72 @@ the reference after an intentional change:
 python -m scripts.update_golden --update-golden --note "reason"
 ```
 
+## 3.2.0
+
+Phase 5A: cross-instrument correctness. No execution rule, fill or cost
+formula changed - verified before regenerating the golden reference by
+replaying the frozen window with the *pinned* SymbolSpec: 268 differences
+against 3.1.0, every one of them a newly added field, zero changes to any
+computed value.
+
+### Added
+
+- **SymbolSpec pinning** (`core/data/provider.py`, `core/runs/store.py`).
+  Every run persists `symbol_spec.json` with the full instrument spec and the
+  timestamp it was read at, and `run_id` now hashes the fields that decide
+  what a trade costs: point, digits, contract_size, tick_value, tick_size,
+  swap_long, swap_short, volume_min/max/step. Descriptive fields (name,
+  currency, trade mode) stay out, so a broker relabeling does not invalidate
+  every id. **This invalidates every run_id created before 3.2.0**, which is
+  the intended effect: the same batch run twice gave XTIUSD -21.05 and -19.86
+  under one id because the broker had changed its swap rates in between.
+  A run without `symbol_spec.json` is reported as "spec not registered" and
+  never assumed to have used the spec on disk today. Walk-forward,
+  permutation, multiple-testing and tick-resolve now revalidate a run against
+  its *pinned* spec instead of re-reading the live one.
+- **Normalized exits** (`core/strategy/spec.py`, `core/strategy/exits.py`).
+  `stop_loss`/`take_profit` accept `{"type":"points"}`, `{"type":"percent"}`
+  (a share of the entry price) and `{"type":"atr","indicator":...,"mult":...}`
+  (a multiple of an ATR read on the signal bar, frozen for the trade - a
+  volatility-sized stop, not a trailing one). An ATR still in warm-up skips
+  the entry (`exit_indicator_warmup`) rather than inventing a distance.
+  Trades now record `stop_level` and `target_level`: with variable exits the
+  distance cannot be reconstructed from the spec afterwards, and tick
+  resolution reads them off the record.
+- **Uncertainty band on every run** (`core/metrics/ambiguity.py`). Ambiguous
+  trades, their share, and what they are worth in equity between the two
+  extreme readings (all stops vs all targets). Above a 5% share the run is
+  declared non-conclusive at bar resolution. Gate zero estimates the same
+  quantity a priori, from the distance between the levels and the
+  distribution of bar ranges, so an untestable configuration can be dropped
+  before it is run.
+- **Gate accounting** (`core/metrics/gates.py`). Risk decisions carry a
+  stable `code`, so rejections aggregate per gate instead of per message -
+  counting on the human reason produced one bucket per spread value, which is
+  how a `max_spread_points` gate rejecting half the signals stayed invisible.
+  Signals arriving while a position is already open are counted too, instead
+  of vanishing before the gates. A gate above 20% raises a warning.
+- Break-even win rate over variable exits is reported as a weighted average
+  with the dispersion of both sides attached, instead of being refused as
+  "dispersed amounts". `strategies/rsi-wick-atr.json`: the baseline signal
+  with SL 2.0 ATR / TP 1.07 ATR, the same 1.875 risk/reward as 150/80 points.
+
+### Fixed
+
+- `.gitignore` matched `core/runs/` with the pattern meant for the persisted
+  `runs/` output directory: four source files of the engine had never been
+  committed. Both patterns are now anchored to the repo root.
+
+### Golden reference
+
+Regenerated, and the final equity moves from 89.60292671 to 89.60059376 for a
+reason that has nothing to do with the engine: `tick_value` was 0.8628276588
+when the reference was pinned and 0.8630212648 when it was regenerated, +0.02%
+of FX drift on an account in EUR against an instrument quoted in USD. Replayed
+against the old pinned spec the engine reproduces the old number exactly. This
+is the drift A1 exists to make visible, caught here on the one run where
+everything else was frozen.
+
 ## 3.1.0
 
 Phase 4: statistical validation and batch execution. No execution rule, cost
@@ -137,3 +203,8 @@ them instead of asking the terminal.
 
 - trades: 134, final equity: 89.60292671
 - reason: Baseline spec description translated to English (repo-wide language migration). Signals, trades and metrics are unchanged; only the spec hash moved.
+
+### Golden reference update (2026-09-02, engine 3.2.0)
+
+- trades: 134, final equity: 89.60059376
+- reason: Phase 5A: trades now record the stop and target levels they were actually placed at (ATR and percent exits cannot be reconstructed from the spec afterwards). Verified before regenerating: 268 differences against the 3.1.0 reference, all of them the two new fields, zero changes to any computed value.
