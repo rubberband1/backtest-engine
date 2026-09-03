@@ -361,17 +361,21 @@ tr.flagged:hover {
   color: var(--ink-soft);
 }
 
+/* Separators are borders on the tiles, not a coloured gap behind them: with
+   an odd number of tiles the grid leaves an empty cell, and a gap-coloured
+   background turns that hole into a grey block that reads as a broken tile. */
 .kpis {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: 1px;
-  background: var(--line);
+  background: var(--bg);
   border-top: 1px solid var(--line);
 }
 
 .kpi {
   background: var(--bg);
   padding: var(--space-2) var(--space-3);
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
 }
 
 .kpi .label {
@@ -576,6 +580,44 @@ tr.flagged:hover {
   color: var(--ink-faint);
   font-size: 12px;
   white-space: nowrap;
+}
+
+/* A short set of options that must all stay visible: a selected value hidden
+   inside a scroller is a setting nobody can see they have on. */
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.chips label {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  cursor: pointer;
+  background: var(--bg);
+}
+
+.chips label:hover {
+  background: var(--bg-soft);
+}
+
+.chips label:has(input:checked) {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.chips label:focus-within {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.chips input {
+  width: auto;
+  margin: 0;
 }
 
 .pager {

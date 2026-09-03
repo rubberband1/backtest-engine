@@ -338,6 +338,43 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/screen": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Screen
+         * @description Starts a screening campaign and returns the job to poll.
+         */
+        post: operations["post_screen_api_screen_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/screen/{job_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Screen */
+        get: operations["get_screen_api_screen__job_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/health": {
         parameters: {
             query?: never;
@@ -359,6 +396,45 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * AmbiguityPriorOut
+         * @description A-priori share of trades a bar-resolution backtest cannot settle.
+         */
+        AmbiguityPriorOut: {
+            /** Applicable */
+            applicable: boolean;
+            /** Reason */
+            reason?: string | null;
+            /** Stop Points */
+            stop_points?: number | null;
+            /** Target Points */
+            target_points?: number | null;
+            /** Stop Points Std */
+            stop_points_std?: number | null;
+            /** Target Points Std */
+            target_points_std?: number | null;
+            /** Level Distance Points */
+            level_distance_points?: number | null;
+            /** Nearest Level Points */
+            nearest_level_points?: number | null;
+            /** Mean Bar Range Points */
+            mean_bar_range_points?: number | null;
+            /** Both Reachable Share */
+            both_reachable_share?: number | null;
+            /** Any Reachable Share */
+            any_reachable_share?: number | null;
+            /** Expected Ambiguous Share */
+            expected_ambiguous_share?: number | null;
+            /**
+             * Exceeds Threshold
+             * @default false
+             */
+            exceeds_threshold: boolean;
+            /** Threshold */
+            threshold: number;
+            /** Verdict */
+            verdict: string;
+        };
         /** BacktestRequest */
         BacktestRequest: {
             /** Strategy Id */
@@ -526,6 +602,15 @@ export interface components {
             non_binary_reasons?: {
                 [key: string]: number;
             };
+            /**
+             * Variable Exits
+             * @default false
+             */
+            variable_exits: boolean;
+            /** Win Relative Std */
+            win_relative_std?: number | null;
+            /** Loss Relative Std */
+            loss_relative_std?: number | null;
         };
         /**
          * BreakevenPriorOut
@@ -548,6 +633,15 @@ export interface components {
             avg_spread_points?: number | null;
             /** Caveats */
             caveats?: string[];
+            /**
+             * Variable Exits
+             * @default false
+             */
+            variable_exits: boolean;
+            /** Stop Points Std */
+            stop_points_std?: number | null;
+            /** Target Points Std */
+            target_points_std?: number | null;
         };
         /**
          * CompareConfigRow
@@ -623,6 +717,13 @@ export interface components {
              * @default true
              */
             configs_identical: boolean;
+            /** Symbol Spec Diff */
+            symbol_spec_diff?: components["schemas"]["CompareConfigRow"][];
+            /**
+             * Symbol Specs Identical
+             * @default true
+             */
+            symbol_specs_identical: boolean;
             /** Warnings */
             warnings?: string[];
         };
@@ -644,6 +745,11 @@ export interface components {
             end: string | null;
             /** Initial Equity */
             initial_equity: number;
+            /**
+             * Symbol Spec Registered
+             * @default true
+             */
+            symbol_spec_registered: boolean;
         };
         /** ConsistencyOut */
         ConsistencyOut: {
@@ -790,6 +896,7 @@ export interface components {
             /** Verdict */
             verdict: string;
             breakeven_prior?: components["schemas"]["BreakevenPriorOut"] | null;
+            ambiguity_prior?: components["schemas"]["AmbiguityPriorOut"] | null;
         };
         /** EdgeStatOut */
         EdgeStatOut: {
@@ -889,6 +996,43 @@ export interface components {
             end: string;
             /** Missing Bars */
             missing_bars: number;
+        };
+        /** GateRowOut */
+        GateRowOut: {
+            /** Code */
+            code: string;
+            /** Label */
+            label: string;
+            /** Rejected */
+            rejected: number;
+            /** Share */
+            share: number;
+            /** Exceeds Threshold */
+            exceeds_threshold: boolean;
+        };
+        /**
+         * GatesOut
+         * @description Signals in, trades out, and every rejection in between.
+         */
+        GatesOut: {
+            /** Signals */
+            signals: number;
+            /** Entry Attempts */
+            entry_attempts: number;
+            /** Executed */
+            executed: number;
+            /** Rejected */
+            rejected: number;
+            /** Executed Share */
+            executed_share?: number | null;
+            /** Rows */
+            rows?: components["schemas"]["GateRowOut"][];
+            /** Threshold */
+            threshold: number;
+            /** Warnings */
+            warnings?: string[];
+            /** Verdict */
+            verdict: string;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -1283,6 +1427,8 @@ export interface components {
             spec_hash: string;
             /** Data Hash */
             data_hash: string;
+            /** Symbol Spec Hash */
+            symbol_spec_hash?: string | null;
             /** Bars */
             bars: number;
             /** Data Start */
@@ -1303,6 +1449,16 @@ export interface components {
             benchmark?: components["schemas"]["MetricsOut"] | null;
             breakeven?: components["schemas"]["BreakevenOut"] | null;
             execution?: components["schemas"]["ExecutionOut"] | null;
+            uncertainty?: components["schemas"]["UncertaintyOut"] | null;
+            gates?: components["schemas"]["GatesOut"] | null;
+            symbol_spec?: components["schemas"]["SymbolSpecOut"] | null;
+            /** Symbol Spec Read At */
+            symbol_spec_read_at?: string | null;
+            /**
+             * Symbol Spec Registered
+             * @default true
+             */
+            symbol_spec_registered: boolean;
         };
         /** RunSummaryOut */
         RunSummaryOut: {
@@ -1352,6 +1508,156 @@ export interface components {
             win_rate: number | null;
             /** Ambiguous Trades */
             ambiguous_trades: number | null;
+        };
+        /** ScreenCellOut */
+        ScreenCellOut: {
+            /** Strategy Id */
+            strategy_id: string;
+            /** Symbol */
+            symbol: string;
+            /** Timeframe */
+            timeframe: string;
+            /** Stage Reached */
+            stage_reached: string;
+            /** Status */
+            status: string;
+            /** Error */
+            error?: string | null;
+            /** Gate Passed */
+            gate_passed?: boolean | null;
+            /** Gate Signals */
+            gate_signals?: number | null;
+            /** Gate Best Net Points */
+            gate_best_net_points?: number | null;
+            /** Gate Best P Value */
+            gate_best_p_value?: number | null;
+            /** Gate Verdict */
+            gate_verdict?: string | null;
+            /** Expected Ambiguous Share */
+            expected_ambiguous_share?: number | null;
+            /** Ambiguity Flag */
+            ambiguity_flag?: boolean | null;
+            /** Run Id */
+            run_id?: string | null;
+            /** Bars */
+            bars?: number | null;
+            /** Trades */
+            trades?: number | null;
+            /** Net Pnl */
+            net_pnl?: number | null;
+            /** Final Equity */
+            final_equity?: number | null;
+            /** Sharpe Per Trade */
+            sharpe_per_trade?: number | null;
+            /** Sharpe Annualized */
+            sharpe_annualized?: number | null;
+            /** Mean R */
+            mean_r?: number | null;
+            /** Win Rate */
+            win_rate?: number | null;
+            /** Max Drawdown Pct */
+            max_drawdown_pct?: number | null;
+            /** P Value */
+            p_value?: number | null;
+            /** Ambiguous Share */
+            ambiguous_share?: number | null;
+            /** Band Money */
+            band_money?: number | null;
+            /** Top Gate */
+            top_gate?: string | null;
+            /** Top Gate Share */
+            top_gate_share?: number | null;
+            /** Gate Warnings */
+            gate_warnings?: string[];
+            /** Permutation P Value */
+            permutation_p_value?: number | null;
+            /** Permutation Kind */
+            permutation_kind?: string | null;
+            /** Permutation Iterations */
+            permutation_iterations?: number | null;
+        };
+        /**
+         * ScreenJobOut
+         * @description A campaign takes minutes: it is a job, polled, not a blocked request.
+         */
+        ScreenJobOut: {
+            /** Job Id */
+            job_id: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "running" | "done" | "error";
+            /**
+             * Started At
+             * Format: date-time
+             */
+            started_at: string;
+            /** Finished At */
+            finished_at?: string | null;
+            /**
+             * Completed Cells
+             * @default 0
+             */
+            completed_cells: number;
+            /**
+             * Total Cells
+             * @default 0
+             */
+            total_cells: number;
+            /** Current */
+            current?: string | null;
+            /** Error */
+            error?: string | null;
+            report?: components["schemas"]["ScreenReportOut"] | null;
+        };
+        /** ScreenReportOut */
+        ScreenReportOut: {
+            /** Strategies */
+            strategies: string[];
+            /** Symbols */
+            symbols: string[];
+            /** Timeframes */
+            timeframes: string[];
+            /** Period Start */
+            period_start?: string | null;
+            /** Period End */
+            period_end?: string | null;
+            /** Initial Equity */
+            initial_equity: number;
+            /** Cells */
+            cells: components["schemas"]["ScreenCellOut"][];
+            panel: components["schemas"]["TrialPanelOut"];
+            /** Thresholds */
+            thresholds?: components["schemas"]["ThresholdRowOut"][];
+            /** Elapsed Seconds */
+            elapsed_seconds: number;
+            /** Engine Version */
+            engine_version: string;
+            /** Verdict */
+            verdict: string;
+            /** Warnings */
+            warnings?: string[];
+        };
+        /** ScreenRequest */
+        ScreenRequest: {
+            /** Strategy Ids */
+            strategy_ids: string[];
+            /** Symbols */
+            symbols: string[];
+            /** Timeframes */
+            timeframes: string[];
+            config: components["schemas"]["RunConfigIn"];
+            /**
+             * Min Trades
+             * @default 30
+             */
+            min_trades: number;
+            /**
+             * Permutation Iterations
+             * @default 200
+             */
+            permutation_iterations: number;
         };
         /** StabilityRowOut */
         StabilityRowOut: {
@@ -1517,6 +1823,10 @@ export interface components {
             entry_time: string;
             /** Entry Price */
             entry_price: number;
+            /** Stop Level */
+            stop_level?: number | null;
+            /** Target Level */
+            target_level?: number | null;
             /**
              * Exit Time
              * Format: date-time
@@ -1584,6 +1894,87 @@ export interface components {
             net_pnl: number;
             /** P Value */
             p_value?: number | null;
+        };
+        /**
+         * TrialPanelOut
+         * @description The correction owed for the size of the campaign.
+         */
+        TrialPanelOut: {
+            /** Attempts */
+            attempts: number;
+            /** Cells Backtested */
+            cells_backtested: number;
+            /** Cells Permuted */
+            cells_permuted: number;
+            /** Sharpes Observed */
+            sharpes_observed: number;
+            /** Variance Across Trials */
+            variance_across_trials?: number | null;
+            /** Expected Max Sharpe */
+            expected_max_sharpe?: number | null;
+            /** Required Sharpe Per Trade */
+            required_sharpe_per_trade?: number | null;
+            /** Confidence */
+            confidence: number;
+            /** Alpha */
+            alpha: number;
+            /** Bonferroni Threshold */
+            bonferroni_threshold?: number | null;
+            /** Best Strategy */
+            best_strategy?: string | null;
+            /** Best Sharpe Per Trade */
+            best_sharpe_per_trade?: number | null;
+            /** Best Clears Required */
+            best_clears_required?: boolean | null;
+            /** Survivors After Correction */
+            survivors_after_correction: number;
+            /** Verdict */
+            verdict: string;
+            /** Assumptions */
+            assumptions?: string[];
+        };
+        /**
+         * UncertaintyOut
+         * @description Conservative and optimistic readings of the same run (ambiguous trades).
+         */
+        UncertaintyOut: {
+            /** Trades */
+            trades: number;
+            /** Ambiguous Trades */
+            ambiguous_trades: number;
+            /** Ambiguous Share */
+            ambiguous_share: number;
+            /** Resolvable */
+            resolvable: boolean;
+            /** Reason */
+            reason?: string | null;
+            /** Conservative Net Pnl */
+            conservative_net_pnl: number;
+            /** Optimistic Net Pnl */
+            optimistic_net_pnl: number;
+            /** Band Money */
+            band_money: number;
+            /** Conservative Final Equity */
+            conservative_final_equity?: number | null;
+            /** Optimistic Final Equity */
+            optimistic_final_equity?: number | null;
+            /** Band Equity Pct */
+            band_equity_pct?: number | null;
+            /** Conservative Win Rate */
+            conservative_win_rate?: number | null;
+            /** Optimistic Win Rate */
+            optimistic_win_rate?: number | null;
+            /**
+             * Exceeds Threshold
+             * @default false
+             */
+            exceeds_threshold: boolean;
+            /** Threshold */
+            threshold: number;
+            /** Verdict */
+            verdict: string;
+            /** Warnings */
+            warnings?: string[];
         };
         /** ValidateRequest */
         ValidateRequest: {
@@ -2350,6 +2741,70 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["BatchResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    post_screen_api_screen_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ScreenRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScreenJobOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_screen_api_screen__job_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScreenJobOut"];
                 };
             };
             /** @description Validation Error */

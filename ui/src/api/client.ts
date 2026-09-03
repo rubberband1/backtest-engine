@@ -44,6 +44,15 @@ export type BatchResponse = S["BatchResponse"];
 export type BatchRunOut = S["BatchRunOut"];
 export type ConsistencyOut = S["ConsistencyOut"];
 
+export type ScreenJob = S["ScreenJobOut"];
+export type ScreenReport = S["ScreenReportOut"];
+export type ScreenCell = S["ScreenCellOut"];
+export type TrialPanelOut = S["TrialPanelOut"];
+export type Uncertainty = S["UncertaintyOut"];
+export type Gates = S["GatesOut"];
+export type GateRow = S["GateRowOut"];
+export type AmbiguityPrior = S["AmbiguityPriorOut"];
+
 /** A grid is a free-form map of dotted spec paths to the values to try. */
 export type ParameterGrid = Record<string, unknown[]>;
 
@@ -167,4 +176,17 @@ export const api = {
     config: RunConfigIn;
     max_workers?: number;
   }) => post<BatchResponse>("/api/batch", body),
+
+  // -- screening ---------------------------------------------------------
+
+  // A campaign is minutes of work: it starts a job and the page polls it.
+  screen: (body: {
+    strategy_ids: string[];
+    symbols: string[];
+    timeframes: string[];
+    config: RunConfigIn;
+    min_trades?: number;
+    permutation_iterations?: number;
+  }) => post<ScreenJob>("/api/screen", body),
+  screenJob: (jobId: string) => request<ScreenJob>(`/api/screen/${jobId}`),
 };

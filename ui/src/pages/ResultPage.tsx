@@ -15,9 +15,11 @@ import {
   api,
   type Breakeven,
   type Equity,
+  type Gates,
   type Metrics,
   type RunDetail,
   type Trades,
+  type Uncertainty,
 } from "../api/client";
 import {
   Badge,
@@ -102,6 +104,7 @@ export function ResultPage({ runId }: { runId: string }) {
   return (
     <div className="stack">
       <RunHeader run={run} />
+      {run.uncertainty && <UncertaintyPanel band={run.uncertainty} runId={runId} />}
       {strategy && <EquitySection equity={equity} initial={strategy.initial_equity} />}
       <div className="row">
         <div className="grow" style={{ flexBasis: 560 }}>
@@ -113,6 +116,8 @@ export function ResultPage({ runId }: { runId: string }) {
               <BreakevenPanel breakeven={run.breakeven} realized={strategy?.win_rate ?? null} />
             )}
             <ExecutionPanel run={run} />
+            {run.gates && <GatesPanel gates={run.gates} />}
+            <SymbolSpecPanel run={run} />
           </div>
         </div>
       </div>
@@ -190,6 +195,261 @@ function RunHeader({ run }: { run: RunDetail }) {
         </div>
       )}
     </Panel>
+  );
+}
+
+/**
+ * The result as a band, not as a number.
+ *
+ * When a bar touches stop and target together the engine assumes the stop.
+ * That assumption is conservative and it is still an assumption: on a run
+ * where it decides the sign of the result, quoting a single equity figure is
+ * a claim the data does not support. The band is the distance between
+ * assuming every ambiguous trade lost and assuming every one of them won —
+ * the tick resolution, when it can be run, lands somewhere inside it.
+ */
+function UncertaintyPanel({ band, runId }: { band: Uncertainty; runId: string }) {
+  const wide = band.exceeds_threshold;
+  if (band.ambiguous_trades === 0) {
+    return (
+      <Panel
+        title="Uncertainty band"
+        aside={<Badge kind="ok">no ambiguous trade</Badge>}
+        tight
+      >
+        <div style={{ padding: "var(--space-2) var(--space-3)", color: "var(--ink-soft)" }}>
+          {band.verdict}
+        </div>
+      </Panel>
+    );
+  }
+  return (
+    <Panel
+      title="Uncertainty band"
+      aside={
+        wide ? (
+          <Badge kind="bad">not conclusive at bar resolution</Badge>
+        ) : (
+          <Badge kind="warn">
+            {pct(band.ambiguous_share, 1)} ambiguous
+          </Badge>
+        )
+      }
+    >
+      <div className="stack">
+        <Notice kind={wide ? "warn" : "info"} title="What the assumption is worth">
+          {band.verdict}
+        </Notice>
+
+        <div className="kpis">
+          <Kpi
+            label="Conservative"
+            value={money(band.conservative_final_equity)}
+            sub="every ambiguous trade exits on its stop — what the engine reports"
+          />
+          <Kpi
+            label="Optimistic"
+            value={money(band.optimistic_final_equity)}
+            sub="every ambiguous trade exits on its target — an upper bound, not a result"
+          />
+          <Kpi
+            label="Band"
+            value={signedMoney(band.band_money)}
+            small
+            sub={`${signedPct(band.band_equity_pct)} of initial equity`}
+          />
+          <Kpi
+            label="Ambiguous trades"
+            value={`${int(band.ambiguous_trades)} / ${int(band.trades)}`}
+            small
+            sub={`${pct(band.ambiguous_share, 1)} · threshold ${pct(band.threshold, 0)}`}
+          />
+          <Kpi
+            label="Win rate"
+            value={`${pct(band.conservative_win_rate, 1)} – ${pct(band.optimistic_win_rate, 1)}`}
+            small
+            sub="conservative to optimistic"
+          />
+        </div>
+
+        {(band.warnings ?? []).map((warning) => (
+          <Notice key={warning} kind="warn" title="Careful">
+            {warning}
+          </Notice>
+        ))}
+
+        {wide && (
+          <div>
+            <a href={`#/validation/${runId}`}>
+              Resolve the ambiguous trades against tick data →
+            </a>{" "}
+            <span style={{ color: "var(--ink-faint)", fontSize: 12 }}>
+              slow, and the only thing that narrows this band with evidence rather
+              than with an assumption.
+            </span>
+          </div>
+        )}
+      </div>
+    </Panel>
+  );
+}
+
+/**
+ * Signals in, trades out, and every rejection in between.
+ *
+ * A gate that throws away most of the signals is not a safety margin, it is
+ * the strategy: on oil the median spread sat within a point of
+ * `max_spread_points` and the gate was silently rejecting about half the
+ * entries, which made the run look like a strategy with few opportunities
+ * rather than one that was almost never allowed to trade.
+ */
+function GatesPanel({ gates }: { gates: Gates }) {
+  const rows = gates.rows ?? [];
+  const warnings = gates.warnings ?? [];
+  return (
+    <Panel
+      title="Risk gates"
+      aside={
+        warnings.length > 0 ? (
+          <Badge kind="warn">{warnings.length} above {pct(gates.threshold, 0)}</Badge>
+        ) : (
+          <Badge kind="ok">no dominant gate</Badge>
+        )
+      }
+      tight
+    >
+      <div style={{ padding: "var(--space-2) var(--space-3)" }}>
+        <div style={{ color: "var(--ink-soft)", fontSize: 12, marginBottom: 8 }}>
+          {gates.verdict}
+        </div>
+        {rows.length === 0 ? (
+          <div style={{ color: "var(--ink-faint)", fontSize: 12 }}>
+            Every signal reached execution.
+          </div>
+        ) : (
+          <table>
+            <caption>
+              Share of the {int(gates.signals)} signals the strategy produced.
+            </caption>
+            <thead>
+              <tr>
+                <th scope="col">Gate</th>
+                <th scope="col" className="num">
+                  Rejected
+                </th>
+                <th scope="col" className="num">
+                  Share
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => (
+                <tr key={row.code} className={row.exceeds_threshold ? "flagged" : undefined}>
+                  <th scope="row" style={{ fontWeight: 400, whiteSpace: "normal" }}>
+                    {row.label}
+                    {row.exceeds_threshold && (
+                      <>
+                        {" "}
+                        <Badge kind="warn">dominant</Badge>
+                      </>
+                    )}
+                  </th>
+                  <td className="num">{int(row.rejected)}</td>
+                  <td className="num">{pct(row.share, 1)}</td>
+                </tr>
+              ))}
+              <tr>
+                <th scope="row" style={{ fontWeight: 600 }}>
+                  Executed
+                </th>
+                <td className="num">{int(gates.executed)}</td>
+                <td className="num">{pct(gates.executed_share, 1)}</td>
+              </tr>
+            </tbody>
+          </table>
+        )}
+        {warnings.map((warning) => (
+          <div key={warning} style={{ marginTop: 8 }}>
+            <Notice kind="warn" title="Dominant gate">
+              {warning}
+            </Notice>
+          </div>
+        ))}
+      </div>
+    </Panel>
+  );
+}
+
+/**
+ * The instrument specification this run actually used.
+ *
+ * tick_value moves with the FX rate and the broker changes swap rates
+ * without notice: two identical runs hours apart are not identical, and the
+ * run_id covers these fields precisely so that they cannot drift silently.
+ * A run persisted before that mechanism existed says so rather than
+ * borrowing today's numbers.
+ */
+function SymbolSpecPanel({ run }: { run: RunDetail }) {
+  const spec = run.symbol_spec;
+  if (!spec) {
+    return (
+      <Panel title="Instrument specification" aside={<Badge kind="warn">not registered</Badge>}>
+        <Notice kind="warn" title="This run did not pin its SymbolSpec">
+          It was persisted before the specification was recorded with the run, so what it
+          used cannot be recovered. The values on disk today may differ: the broker moves
+          swap rates, and tick_value follows the FX rate. Re-run it to get a run whose
+          costs are documented.
+        </Notice>
+      </Panel>
+    );
+  }
+  return (
+    <Panel
+      title="Instrument specification"
+      aside={
+        <span style={{ fontSize: 12, color: "var(--ink-faint)" }}>
+          read {utcDateTime(run.symbol_spec_read_at)} UTC
+        </span>
+      }
+      tight
+    >
+      <table>
+        <caption>
+          The fields in bold are hashed into the run_id: a change in any of them is a
+          different run, not the same one with different numbers.
+        </caption>
+        <tbody>
+          <SpecRow label="Point" value={num(spec.point, 5)} hashed />
+          <SpecRow label="Digits" value={int(spec.digits)} hashed />
+          <SpecRow label="Contract size" value={num(spec.contract_size, 2)} hashed />
+          <SpecRow label="Tick value" value={num(spec.tick_value, 6)} hashed />
+          <SpecRow label="Tick size" value={num(spec.tick_size, 6)} hashed />
+          <SpecRow label="Swap long / short" value={`${num(spec.swap_long, 3)} / ${num(spec.swap_short, 3)}`} hashed />
+          <SpecRow
+            label="Volume min / step / max"
+            value={`${num(spec.volume_min, 2)} / ${num(spec.volume_step, 2)} / ${num(spec.volume_max, 2)}`}
+            hashed
+          />
+          <SpecRow label="Profit currency" value={spec.currency_profit} />
+          <SpecRow label="Trade mode" value={spec.trade_mode} />
+          <SpecRow
+            label="Spec hash"
+            value={run.symbol_spec_hash ? run.symbol_spec_hash.slice(0, 16) : "—"}
+          />
+        </tbody>
+      </table>
+    </Panel>
+  );
+}
+
+function SpecRow({ label, value, hashed }: { label: string; value: string; hashed?: boolean }) {
+  return (
+    <tr>
+      <th scope="row" style={{ fontWeight: hashed ? 600 : 400 }}>
+        {label}
+      </th>
+      <td className="num mono">{value}</td>
+    </tr>
   );
 }
 
@@ -596,10 +856,14 @@ function MetricsTable({
   );
 }
 
+/**
+ * The rejected signals are not listed here: the Risk gates panel below tells
+ * that story with labels and shares instead of raw codes, and saying it twice
+ * in two different vocabularies helps nobody.
+ */
 function ExecutionPanel({ run }: { run: RunDetail }) {
   const execution = run.execution;
   if (!execution) return null;
-  const blocked = Object.entries(execution.blocked ?? {});
   const exits = Object.entries(execution.exit_reasons ?? {});
   return (
     <Panel title="Execution">
@@ -635,18 +899,6 @@ function ExecutionPanel({ run }: { run: RunDetail }) {
           )}
         </div>
 
-        <div>
-          <h3>Signals blocked by the gates</h3>
-          {blocked.length === 0 ? (
-            <div style={{ color: "var(--ink-soft)" }}>none</div>
-          ) : (
-            <dl className="facts">
-              {blocked.map(([reason, count]) => (
-                <ExitRow key={reason} reason={reason} count={count} />
-              ))}
-            </dl>
-          )}
-        </div>
       </div>
     </Panel>
   );

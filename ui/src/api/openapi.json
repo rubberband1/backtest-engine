@@ -3,7 +3,7 @@
   "info": {
     "title": "backtest-engine",
     "description": "Local API: cached data, strategies, backtests, saved runs.",
-    "version": "3.1.0"
+    "version": "3.2.0"
   },
   "paths": {
     "/api/symbols": {
@@ -858,6 +858,90 @@
         }
       }
     },
+    "/api/screen": {
+      "post": {
+        "tags": [
+          "research"
+        ],
+        "summary": "Post Screen",
+        "description": "Starts a screening campaign and returns the job to poll.",
+        "operationId": "post_screen_api_screen_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScreenRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScreenJobOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/screen/{job_id}": {
+      "get": {
+        "tags": [
+          "research"
+        ],
+        "summary": "Get Screen",
+        "operationId": "get_screen_api_screen__job_id__get",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScreenJobOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/health": {
       "get": {
         "tags": [
@@ -884,6 +968,157 @@
   },
   "components": {
     "schemas": {
+      "AmbiguityPriorOut": {
+        "properties": {
+          "applicable": {
+            "type": "boolean",
+            "title": "Applicable"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "stop_points": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stop Points"
+          },
+          "target_points": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Points"
+          },
+          "stop_points_std": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stop Points Std"
+          },
+          "target_points_std": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Points Std"
+          },
+          "level_distance_points": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Level Distance Points"
+          },
+          "nearest_level_points": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nearest Level Points"
+          },
+          "mean_bar_range_points": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mean Bar Range Points"
+          },
+          "both_reachable_share": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Both Reachable Share"
+          },
+          "any_reachable_share": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Any Reachable Share"
+          },
+          "expected_ambiguous_share": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Ambiguous Share"
+          },
+          "exceeds_threshold": {
+            "type": "boolean",
+            "title": "Exceeds Threshold",
+            "default": false
+          },
+          "threshold": {
+            "type": "number",
+            "title": "Threshold"
+          },
+          "verdict": {
+            "type": "string",
+            "title": "Verdict"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "applicable",
+          "threshold",
+          "verdict"
+        ],
+        "title": "AmbiguityPriorOut",
+        "description": "A-priori share of trades a bar-resolution backtest cannot settle."
+      },
       "BacktestRequest": {
         "properties": {
           "strategy_id": {
@@ -1455,6 +1690,33 @@
             },
             "type": "object",
             "title": "Non Binary Reasons"
+          },
+          "variable_exits": {
+            "type": "boolean",
+            "title": "Variable Exits",
+            "default": false
+          },
+          "win_relative_std": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Win Relative Std"
+          },
+          "loss_relative_std": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Loss Relative Std"
           }
         },
         "additionalProperties": false,
@@ -1544,6 +1806,33 @@
             },
             "type": "array",
             "title": "Caveats"
+          },
+          "variable_exits": {
+            "type": "boolean",
+            "title": "Variable Exits",
+            "default": false
+          },
+          "stop_points_std": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stop Points Std"
+          },
+          "target_points_std": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Points Std"
           }
         },
         "additionalProperties": false,
@@ -1780,6 +2069,18 @@
             "title": "Configs Identical",
             "default": true
           },
+          "symbol_spec_diff": {
+            "items": {
+              "$ref": "#/components/schemas/CompareConfigRow"
+            },
+            "type": "array",
+            "title": "Symbol Spec Diff"
+          },
+          "symbol_specs_identical": {
+            "type": "boolean",
+            "title": "Symbol Specs Identical",
+            "default": true
+          },
           "warnings": {
             "items": {
               "type": "string"
@@ -1849,6 +2150,11 @@
           "initial_equity": {
             "type": "number",
             "title": "Initial Equity"
+          },
+          "symbol_spec_registered": {
+            "type": "boolean",
+            "title": "Symbol Spec Registered",
+            "default": true
           }
         },
         "additionalProperties": false,
@@ -2439,6 +2745,16 @@
                 "type": "null"
               }
             ]
+          },
+          "ambiguity_prior": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AmbiguityPriorOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": false,
@@ -2759,6 +3075,105 @@
           "missing_bars"
         ],
         "title": "GapOut"
+      },
+      "GateRowOut": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "rejected": {
+            "type": "integer",
+            "title": "Rejected"
+          },
+          "share": {
+            "type": "number",
+            "title": "Share"
+          },
+          "exceeds_threshold": {
+            "type": "boolean",
+            "title": "Exceeds Threshold"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "code",
+          "label",
+          "rejected",
+          "share",
+          "exceeds_threshold"
+        ],
+        "title": "GateRowOut"
+      },
+      "GatesOut": {
+        "properties": {
+          "signals": {
+            "type": "integer",
+            "title": "Signals"
+          },
+          "entry_attempts": {
+            "type": "integer",
+            "title": "Entry Attempts"
+          },
+          "executed": {
+            "type": "integer",
+            "title": "Executed"
+          },
+          "rejected": {
+            "type": "integer",
+            "title": "Rejected"
+          },
+          "executed_share": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Executed Share"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/GateRowOut"
+            },
+            "type": "array",
+            "title": "Rows"
+          },
+          "threshold": {
+            "type": "number",
+            "title": "Threshold"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Warnings"
+          },
+          "verdict": {
+            "type": "string",
+            "title": "Verdict"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "signals",
+          "entry_attempts",
+          "executed",
+          "rejected",
+          "threshold",
+          "verdict"
+        ],
+        "title": "GatesOut",
+        "description": "Signals in, trades out, and every rejection in between."
       },
       "HTTPValidationError": {
         "properties": {
@@ -3850,6 +4265,17 @@
             "type": "string",
             "title": "Data Hash"
           },
+          "symbol_spec_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Symbol Spec Hash"
+          },
           "bars": {
             "type": "integer",
             "title": "Bars"
@@ -3938,6 +4364,53 @@
                 "type": "null"
               }
             ]
+          },
+          "uncertainty": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UncertaintyOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "gates": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GatesOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "symbol_spec": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SymbolSpecOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "symbol_spec_read_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Symbol Spec Read At"
+          },
+          "symbol_spec_registered": {
+            "type": "boolean",
+            "title": "Symbol Spec Registered",
+            "default": true
           }
         },
         "additionalProperties": false,
@@ -4160,6 +4633,574 @@
           "ambiguous_trades"
         ],
         "title": "RunSummaryOut"
+      },
+      "ScreenCellOut": {
+        "properties": {
+          "strategy_id": {
+            "type": "string",
+            "title": "Strategy Id"
+          },
+          "symbol": {
+            "type": "string",
+            "title": "Symbol"
+          },
+          "timeframe": {
+            "type": "string",
+            "title": "Timeframe"
+          },
+          "stage_reached": {
+            "type": "string",
+            "title": "Stage Reached"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "gate_passed": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gate Passed"
+          },
+          "gate_signals": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gate Signals"
+          },
+          "gate_best_net_points": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gate Best Net Points"
+          },
+          "gate_best_p_value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gate Best P Value"
+          },
+          "gate_verdict": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gate Verdict"
+          },
+          "expected_ambiguous_share": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Ambiguous Share"
+          },
+          "ambiguity_flag": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ambiguity Flag"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "bars": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bars"
+          },
+          "trades": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trades"
+          },
+          "net_pnl": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Net Pnl"
+          },
+          "final_equity": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Final Equity"
+          },
+          "sharpe_per_trade": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sharpe Per Trade"
+          },
+          "sharpe_annualized": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sharpe Annualized"
+          },
+          "mean_r": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mean R"
+          },
+          "win_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Win Rate"
+          },
+          "max_drawdown_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Drawdown Pct"
+          },
+          "p_value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "P Value"
+          },
+          "ambiguous_share": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ambiguous Share"
+          },
+          "band_money": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Band Money"
+          },
+          "top_gate": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Top Gate"
+          },
+          "top_gate_share": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Top Gate Share"
+          },
+          "gate_warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Gate Warnings"
+          },
+          "permutation_p_value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Permutation P Value"
+          },
+          "permutation_kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Permutation Kind"
+          },
+          "permutation_iterations": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Permutation Iterations"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "strategy_id",
+          "symbol",
+          "timeframe",
+          "stage_reached",
+          "status"
+        ],
+        "title": "ScreenCellOut"
+      },
+      "ScreenJobOut": {
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "title": "Job Id"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "running",
+              "done",
+              "error"
+            ],
+            "title": "Status"
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Started At"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "completed_cells": {
+            "type": "integer",
+            "title": "Completed Cells",
+            "default": 0
+          },
+          "total_cells": {
+            "type": "integer",
+            "title": "Total Cells",
+            "default": 0
+          },
+          "current": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "report": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ScreenReportOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "job_id",
+          "status",
+          "started_at"
+        ],
+        "title": "ScreenJobOut",
+        "description": "A campaign takes minutes: it is a job, polled, not a blocked request."
+      },
+      "ScreenReportOut": {
+        "properties": {
+          "strategies": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Strategies"
+          },
+          "symbols": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Symbols"
+          },
+          "timeframes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Timeframes"
+          },
+          "period_start": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period Start"
+          },
+          "period_end": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period End"
+          },
+          "initial_equity": {
+            "type": "number",
+            "title": "Initial Equity"
+          },
+          "cells": {
+            "items": {
+              "$ref": "#/components/schemas/ScreenCellOut"
+            },
+            "type": "array",
+            "title": "Cells"
+          },
+          "panel": {
+            "$ref": "#/components/schemas/TrialPanelOut"
+          },
+          "thresholds": {
+            "items": {
+              "$ref": "#/components/schemas/ThresholdRowOut"
+            },
+            "type": "array",
+            "title": "Thresholds"
+          },
+          "elapsed_seconds": {
+            "type": "number",
+            "title": "Elapsed Seconds"
+          },
+          "engine_version": {
+            "type": "string",
+            "title": "Engine Version"
+          },
+          "verdict": {
+            "type": "string",
+            "title": "Verdict"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Warnings"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "strategies",
+          "symbols",
+          "timeframes",
+          "initial_equity",
+          "cells",
+          "panel",
+          "elapsed_seconds",
+          "engine_version",
+          "verdict"
+        ],
+        "title": "ScreenReportOut"
+      },
+      "ScreenRequest": {
+        "properties": {
+          "strategy_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Strategy Ids"
+          },
+          "symbols": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Symbols"
+          },
+          "timeframes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Timeframes"
+          },
+          "config": {
+            "$ref": "#/components/schemas/RunConfigIn"
+          },
+          "min_trades": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Min Trades",
+            "default": 30
+          },
+          "permutation_iterations": {
+            "type": "integer",
+            "maximum": 5000.0,
+            "minimum": 10.0,
+            "title": "Permutation Iterations",
+            "default": 200
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "strategy_ids",
+          "symbols",
+          "timeframes",
+          "config"
+        ],
+        "title": "ScreenRequest"
       },
       "StabilityRowOut": {
         "properties": {
@@ -4601,6 +5642,28 @@
             "type": "number",
             "title": "Entry Price"
           },
+          "stop_level": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stop Level"
+          },
+          "target_level": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Level"
+          },
           "exit_time": {
             "type": "string",
             "format": "date-time",
@@ -4798,6 +5861,273 @@
           "net_pnl"
         ],
         "title": "TrialOut"
+      },
+      "TrialPanelOut": {
+        "properties": {
+          "attempts": {
+            "type": "integer",
+            "title": "Attempts"
+          },
+          "cells_backtested": {
+            "type": "integer",
+            "title": "Cells Backtested"
+          },
+          "cells_permuted": {
+            "type": "integer",
+            "title": "Cells Permuted"
+          },
+          "sharpes_observed": {
+            "type": "integer",
+            "title": "Sharpes Observed"
+          },
+          "variance_across_trials": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Variance Across Trials"
+          },
+          "expected_max_sharpe": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Max Sharpe"
+          },
+          "required_sharpe_per_trade": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Required Sharpe Per Trade"
+          },
+          "confidence": {
+            "type": "number",
+            "title": "Confidence"
+          },
+          "alpha": {
+            "type": "number",
+            "title": "Alpha"
+          },
+          "bonferroni_threshold": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bonferroni Threshold"
+          },
+          "best_strategy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Best Strategy"
+          },
+          "best_sharpe_per_trade": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Best Sharpe Per Trade"
+          },
+          "best_clears_required": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Best Clears Required"
+          },
+          "survivors_after_correction": {
+            "type": "integer",
+            "title": "Survivors After Correction"
+          },
+          "verdict": {
+            "type": "string",
+            "title": "Verdict"
+          },
+          "assumptions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Assumptions"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "attempts",
+          "cells_backtested",
+          "cells_permuted",
+          "sharpes_observed",
+          "confidence",
+          "alpha",
+          "survivors_after_correction",
+          "verdict"
+        ],
+        "title": "TrialPanelOut",
+        "description": "The correction owed for the size of the campaign."
+      },
+      "UncertaintyOut": {
+        "properties": {
+          "trades": {
+            "type": "integer",
+            "title": "Trades"
+          },
+          "ambiguous_trades": {
+            "type": "integer",
+            "title": "Ambiguous Trades"
+          },
+          "ambiguous_share": {
+            "type": "number",
+            "title": "Ambiguous Share"
+          },
+          "resolvable": {
+            "type": "boolean",
+            "title": "Resolvable"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "conservative_net_pnl": {
+            "type": "number",
+            "title": "Conservative Net Pnl"
+          },
+          "optimistic_net_pnl": {
+            "type": "number",
+            "title": "Optimistic Net Pnl"
+          },
+          "band_money": {
+            "type": "number",
+            "title": "Band Money"
+          },
+          "conservative_final_equity": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conservative Final Equity"
+          },
+          "optimistic_final_equity": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Optimistic Final Equity"
+          },
+          "band_equity_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Band Equity Pct"
+          },
+          "conservative_win_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conservative Win Rate"
+          },
+          "optimistic_win_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Optimistic Win Rate"
+          },
+          "exceeds_threshold": {
+            "type": "boolean",
+            "title": "Exceeds Threshold",
+            "default": false
+          },
+          "threshold": {
+            "type": "number",
+            "title": "Threshold"
+          },
+          "verdict": {
+            "type": "string",
+            "title": "Verdict"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Warnings"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "trades",
+          "ambiguous_trades",
+          "ambiguous_share",
+          "resolvable",
+          "conservative_net_pnl",
+          "optimistic_net_pnl",
+          "band_money",
+          "threshold",
+          "verdict"
+        ],
+        "title": "UncertaintyOut",
+        "description": "Conservative and optimistic readings of the same run (ambiguous trades)."
       },
       "ValidateRequest": {
         "properties": {

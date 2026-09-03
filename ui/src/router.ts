@@ -6,7 +6,8 @@ export type Route =
   | { name: "result"; runId: string }
   | { name: "compare"; runIds: string[] }
   | { name: "validation"; runId: string }
-  | { name: "batch" };
+  | { name: "batch" }
+  | { name: "screen"; jobId: string | null };
 
 export function parseRoute(hash: string): Route {
   const path = hash.replace(/^#/, "");
@@ -16,6 +17,11 @@ export function parseRoute(hash: string): Route {
   if (parts[0] === "result") return { name: "result", runId: parts[1] ?? "" };
   if (parts[0] === "validation") return { name: "validation", runId: parts[1] ?? "" };
   if (parts[0] === "batch") return { name: "batch" };
+  // a campaign runs for minutes: its id lives in the URL so a reload, or a
+  // link sent to someone else, reattaches to the job instead of losing it
+  if (parts[0] === "screen") {
+    return { name: "screen", jobId: new URLSearchParams(query).get("job") };
+  }
   if (parts[0] === "compare") {
     const runs = new URLSearchParams(query).get("runs");
     return { name: "compare", runIds: runs ? runs.split(",").filter(Boolean) : [] };

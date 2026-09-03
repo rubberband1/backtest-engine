@@ -4,6 +4,7 @@ import { BatchPage } from "./pages/BatchPage";
 import { ComparePage } from "./pages/ComparePage";
 import { ResultPage } from "./pages/ResultPage";
 import { RunPage } from "./pages/RunPage";
+import { ScreenPage } from "./pages/ScreenPage";
 import { ValidationPage } from "./pages/ValidationPage";
 import { useRoute } from "./router";
 
@@ -40,6 +41,9 @@ export function App() {
           <a href="#/batch" aria-current={route.name === "batch" ? "page" : undefined}>
             Batch
           </a>
+          <a href="#/screen" aria-current={route.name === "screen" ? "page" : undefined}>
+            Screen
+          </a>
         </nav>
         <div className="topbar-meta">
           {/* MT5 server time != local time != UTC: always say which. */}
@@ -61,6 +65,7 @@ export function App() {
         {route.name === "compare" && <ComparePage initialRunIds={route.runIds} />}
         {route.name === "validation" && <ValidationPage runId={route.runId} />}
         {route.name === "batch" && <BatchPage />}
+        {route.name === "screen" && <ScreenPage jobId={route.jobId} />}
       </main>
     </div>
   );

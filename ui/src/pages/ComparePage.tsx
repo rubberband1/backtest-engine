@@ -162,6 +162,7 @@ function ComparisonView({ comparison }: { comparison: CompareResponse }) {
   );
 
   const configDiff = comparison.config_diff ?? [];
+  const specDiff = comparison.symbol_spec_diff ?? [];
 
   /**
    * What separates two columns, in one line under the run id. Without it a
@@ -361,6 +362,36 @@ function ComparisonView({ comparison }: { comparison: CompareResponse }) {
                   </tr>
                   {configDiff.map((row) => (
                     <tr key={`config-${row.key}`}>
+                      <th scope="row" style={{ fontWeight: 400 }}>
+                        {row.key}
+                      </th>
+                      {row.values.map((value, index) => (
+                        <td className="num mono" key={`${row.key}-${index}`}>
+                          {value ?? "—"}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </>
+              )}
+
+              {/* The instrument spec is an input to the result, not context:
+                  tick_value tracks an FX rate and swap rates move when the
+                  broker decides. Two runs differing here were priced
+                  differently, whatever else matches. */}
+              {specDiff.length > 0 && (
+                <>
+                  <tr>
+                    <th
+                      scope="row"
+                      colSpan={comparison.runs.length + 1}
+                      className="section-row"
+                    >
+                      Instrument specification differences — these change what a trade costs
+                    </th>
+                  </tr>
+                  {specDiff.map((row) => (
+                    <tr key={`spec-${row.key}`} className="flagged">
                       <th scope="row" style={{ fontWeight: 400 }}>
                         {row.key}
                       </th>
