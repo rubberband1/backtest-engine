@@ -1,11 +1,61 @@
 # backtest-engine
 
-Backtesting engine for trading strategies on MetaTrader 5 data.
+**A backtesting engine for MetaTrader 5 data, built so that it cannot flatter
+a strategy. Its first campaign screened 300 configurations — 10 classic
+strategies across 10 instruments and 3 timeframes — and reported that none of
+them survives the correction for having tried 300 things. That is the result,
+and the engine is what makes it trustworthy.**
 
-There is not a single line of code here that can send an order. The project
-exists to answer one question honestly: *given these bars, these costs and
+The best cell of the campaign scored a Sharpe per trade of **+0.3448**. A
+search of 300 attempts is expected to reach **+0.2830** by luck alone, and
+the observed value would have to clear **+0.6042** to be credible at 95%
+confidence. It does not. Zero cells survive Bonferroni. The engine says so in
+one line, on screen, above the results table.
+
+The interesting failure is the one that looks like a success: the same
+campaign contains a cell that turned 100 into 4,666 over a year on gold at
+M5, annualized Sharpe 2.95, p = 0.02. It is a false positive — 64.8% maximum
+drawdown, a Sharpe per trade an order of magnitude below the corrected
+threshold, and half its signals discarded by a risk gate nobody was
+watching. A backtester that reports only the equity curve sells that cell as
+a discovery. This one does not.
+
+*There is not a single line of code here that can send an order.* The project
+exists to answer one question honestly: given these bars, these costs and
 this spec, what would have happened — and how much of that is statistically
-meaningful?*
+meaningful?
+
+### What that costs, in engineering
+
+Getting to an honest "no" takes more machinery than getting to a hopeful
+"yes":
+
+- **Every number carries the observations it rests on and its standard
+  error.** A test without statistical power says so instead of returning a
+  figure.
+- **A campaign counts its own attempts.** Three hundred backtests are three
+  hundred chances to be lucky: at the 5% level about fifteen come back
+  "significant" with no edge anywhere in the data. The trial count covers
+  every cell that was *started*, including those stopped before a backtest.
+- **The run's own inputs are pinned.** Instrument specs drift — the same
+  batch once returned XTIUSD −21.05 and −19.86 under identical hashes because
+  the broker had changed its swap rates in between — so the cost fields are
+  part of a run's identity and are stored with it.
+- **Assumptions that could decide the answer are reported as bands.** When a
+  bar touches stop and target together the engine assumes the stop; on the
+  baseline that assumption was worth twelve points of final equity, the
+  difference between −10% and +1.5%. Every run reports both ends of it.
+- **Silent filters are made loud.** Risk gates report what share of signals
+  they rejected; one gate was quietly discarding half of them.
+- **A golden test pins the baseline** to the trade, so a change in results
+  has to be declared rather than discovered later.
+- 361 tests, including one that recomputes signals on truncated history to
+  prove no rule can see the future.
+
+Findings are written down even when they contradict the reason the feature
+was built: normalizing exits on ATR was supposed to make instruments
+comparable, and measurement showed it made the dispersion *worse* — that is
+in the docs next to the feature.
 
 ## Requirements
 
