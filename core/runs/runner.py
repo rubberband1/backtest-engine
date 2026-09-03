@@ -242,7 +242,9 @@ def execute_run(
             bars, symbol_spec.spec, spec.sizing, result.timeframe,
             config.initial_equity, costs, server_tz,
         )
-        return store.finish_run(run_id, result, strategy_report, benchmark, spec)
+        return store.finish_run(
+            run_id, result, strategy_report, benchmark, spec, symbol_spec.spec
+        )
     except Exception as exc:
         store.fail_run(run_id, f"{type(exc).__name__}: {exc}")
         raise
@@ -270,8 +272,19 @@ def run_edge_gate(
         min_observations=min_observations or DEFAULT_MIN_OBSERVATIONS,
     )
     avg_spread = float(costs.spread.series(bars).mean()) if len(bars) else None
+    # ATR and percent exits have no single distance: the ambiguity estimate
+    # already measured the average the strategy would have placed, and the
+    # break-even prior is stated over that same average
+    measured = report.ambiguity_prior or {}
     report.breakeven_prior = breakeven_prior(
-        spec, symbol_spec, costs.commission, avg_spread
+        spec,
+        symbol_spec,
+        costs.commission,
+        avg_spread,
+        stop_points=measured.get("stop_points"),
+        target_points=measured.get("target_points"),
+        stop_points_std=measured.get("stop_points_std"),
+        target_points_std=measured.get("target_points_std"),
     ).as_dict()
     return report
 

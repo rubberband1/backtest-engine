@@ -179,6 +179,26 @@ class BreakevenPriorOut(Model):
     target_points_std: float | None = None
 
 
+class AmbiguityPriorOut(Model):
+    """A-priori share of trades a bar-resolution backtest cannot settle."""
+
+    applicable: bool
+    reason: str | None = None
+    stop_points: float | None = None
+    target_points: float | None = None
+    stop_points_std: float | None = None
+    target_points_std: float | None = None
+    level_distance_points: float | None = None
+    nearest_level_points: float | None = None
+    mean_bar_range_points: float | None = None
+    both_reachable_share: float | None = None
+    any_reachable_share: float | None = None
+    expected_ambiguous_share: float | None = None
+    exceeds_threshold: bool = False
+    threshold: float
+    verdict: str
+
+
 class EdgeResponse(Model):
     symbol: str
     timeframe: str
@@ -194,6 +214,7 @@ class EdgeResponse(Model):
     passed: bool
     verdict: str
     breakeven_prior: BreakevenPriorOut | None = None
+    ambiguity_prior: AmbiguityPriorOut | None = None
 
 
 # -- run -----------------------------------------------------------------
@@ -246,6 +267,28 @@ class BreakevenOut(Model):
     variable_exits: bool = False
     win_relative_std: float | None = None
     loss_relative_std: float | None = None
+
+
+class UncertaintyOut(Model):
+    """Conservative and optimistic readings of the same run (ambiguous trades)."""
+
+    trades: int
+    ambiguous_trades: int
+    ambiguous_share: float
+    resolvable: bool
+    reason: str | None = None
+    conservative_net_pnl: float
+    optimistic_net_pnl: float
+    band_money: float
+    conservative_final_equity: float | None = None
+    optimistic_final_equity: float | None = None
+    band_equity_pct: float | None = None
+    conservative_win_rate: float | None = None
+    optimistic_win_rate: float | None = None
+    exceeds_threshold: bool = False
+    threshold: float
+    verdict: str
+    warnings: list[str] = Field(default_factory=list)
 
 
 class ExecutionOut(Model):

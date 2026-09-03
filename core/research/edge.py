@@ -41,6 +41,7 @@ from scipy import stats
 from core.engine.costs import SpreadPolicy
 from core.serialization import json_safe
 from core.strategy.evaluator import evaluate
+from core.strategy.exits import distance_points
 from core.strategy.spec import StrategySpec
 
 logger = logging.getLogger(__name__)
@@ -50,6 +51,11 @@ DEFAULT_MIN_OBSERVATIONS = 30
 DEFAULT_SIGNIFICANCE = 0.05
 # inf is not valid JSON: degenerate t-stats are clamped to a large finite value
 HUGE_T = 1e6
+# Threshold on the a-priori estimator of ambiguity, which is an upper bound
+# running roughly 3-5x above the realized share (see AmbiguityPrior): 20% here
+# corresponds to a realized share around the 5% at which a run stops being
+# conclusive at bar resolution. Calibrated on measured runs, not chosen.
+AMBIGUITY_WARNING_SHARE = 0.20
 
 Direction = Literal["long", "short", "both"]
 
@@ -98,6 +104,8 @@ class EdgeReport:
     # a-priori break-even win rate: depends only on the spec and the average
     # spread, so it belongs here, before any backtest (see metrics.breakeven)
     breakeven_prior: "dict[str, object] | None" = None
+    # a-priori share of trades a bar-resolution backtest cannot settle
+    ambiguity_prior: "dict[str, object] | None" = None
 
     def as_dict(self) -> dict[str, object]:
         return json_safe({
@@ -115,6 +123,7 @@ class EdgeReport:
             "passed": self.passed,
             "verdict": self.verdict,
             "breakeven_prior": self.breakeven_prior,
+            "ambiguity_prior": self.ambiguity_prior,
         })
 
     def as_text(self) -> str:
@@ -134,6 +143,167 @@ class EdgeReport:
             for s in self.stats
         ]
         return "\n".join([head, *rows, "", f"  VERDICT: {self.verdict}"])
+
+
+@dataclass(frozen=True)
+class AmbiguityPrior:
+    """How much of this configuration a bar-resolution backtest cannot settle.
+
+    A trade is ambiguous when the bar that ends it touches both levels. So
+    the question is conditional, not absolute: *among the bars able to reach
+    a level at all, what share is wide enough to reach both?* A bar can touch
+    both only if its range covers the distance between them (`stop + target`
+    points); it can touch one only if its range covers the nearer of the two.
+    The ratio of those two frequencies is the estimate.
+
+    It is an upper bound, and a loose one: a bar wide enough to span both
+    levels still needs the entry price positioned between them, which this
+    does not model. Measured against realized runs it comes out roughly three
+    to five times above the actual share - 23% against a realized 8.2% on the
+    M1 baseline, ~7% against realized 0-1.3% on the H1 and M15 cells. The
+    warning threshold is set on the estimator's own scale accordingly, and
+    what it separates is the configuration whose result the stop-first
+    assumption decides from the one where it does not.
+    """
+
+    applicable: bool
+    reason: str | None
+    stop_points: float | None = None
+    target_points: float | None = None
+    stop_points_std: float | None = None
+    target_points_std: float | None = None
+    level_distance_points: float | None = None
+    nearest_level_points: float | None = None
+    mean_bar_range_points: float | None = None
+    both_reachable_share: float | None = None
+    any_reachable_share: float | None = None
+    expected_ambiguous_share: float | None = None
+    exceeds_threshold: bool = False
+    threshold: float = AMBIGUITY_WARNING_SHARE
+    verdict: str = ""
+
+    def as_dict(self) -> dict[str, object]:
+        return json_safe(asdict(self))
+
+
+def ambiguity_prior(
+    strategy: StrategySpec,
+    bars: pd.DataFrame,
+    point: float,
+    indicators: dict[str, pd.Series],
+    signal_mask: np.ndarray | None = None,
+) -> AmbiguityPrior:
+    """A-priori estimate of the share of trades a bar backtest cannot resolve."""
+    stop = strategy.exit.stop_loss
+    target = strategy.exit.take_profit
+    if stop is None or target is None:
+        return AmbiguityPrior(
+            applicable=False,
+            reason=(
+                "the spec has no stop and target pair: no bar can touch both, "
+                "so nothing here is ambiguous"
+            ),
+            verdict="not applicable: the spec has no stop/target pair",
+        )
+    if bars.empty:
+        return AmbiguityPrior(
+            applicable=False, reason="no bars", verdict="not applicable: no bars"
+        )
+
+    stop_points = distance_points(stop, bars, indicators, point)
+    target_points = distance_points(target, bars, indicators, point)
+    assert stop_points is not None and target_points is not None
+    separation = stop_points + target_points
+
+    ranges = (
+        bars["high"].to_numpy(dtype="float64") - bars["low"].to_numpy(dtype="float64")
+    ) / point
+
+    usable = np.isfinite(separation) & np.isfinite(ranges)
+    if signal_mask is not None and signal_mask.any():
+        # distances are frozen at the signal bar: average the ones this
+        # strategy would actually have placed, not the ones it never used
+        usable_levels = usable & signal_mask
+    else:
+        usable_levels = usable
+    if not usable_levels.any():
+        return AmbiguityPrior(
+            applicable=False,
+            reason="no bar with both a usable exit distance and a range",
+            verdict="not applicable: exit distances never become available",
+        )
+
+    mean_stop = float(np.mean(stop_points[usable_levels]))
+    mean_target = float(np.mean(target_points[usable_levels]))
+    placed = int(usable_levels.sum())
+    std_stop = float(np.std(stop_points[usable_levels], ddof=1)) if placed > 1 else 0.0
+    std_target = float(np.std(target_points[usable_levels], ddof=1)) if placed > 1 else 0.0
+    mean_separation = float(np.mean(separation[usable_levels]))
+    nearest = float(np.mean(np.minimum(stop_points, target_points)[usable_levels]))
+    mean_range = float(np.mean(ranges[usable]))
+
+    # conditional, not absolute: among the bars able to reach a level at all,
+    # how many are wide enough to reach both
+    both = float(np.mean(ranges[usable] >= mean_separation))
+    any_reachable = float(np.mean(ranges[usable] >= nearest))
+    if any_reachable <= 0:
+        return AmbiguityPrior(
+            applicable=False,
+            reason=(
+                f"no bar in this sample spans even the nearer level "
+                f"({nearest:.0f} points): this configuration produces no exits on "
+                f"its levels at all"
+            ),
+            stop_points=mean_stop,
+            target_points=mean_target,
+            stop_points_std=std_stop,
+            target_points_std=std_target,
+            level_distance_points=mean_separation,
+            nearest_level_points=nearest,
+            mean_bar_range_points=mean_range,
+            verdict="not applicable: the levels are never reached at bar resolution",
+        )
+
+    expected = float(min(both / any_reachable, 1.0))
+    exceeds = expected > AMBIGUITY_WARNING_SHARE
+
+    shape = (
+        f"levels {mean_separation:.0f} points apart, nearest at {nearest:.0f}, "
+        f"mean bar range {mean_range:.0f}"
+    )
+    if exceeds:
+        verdict = (
+            f"{expected:.0%} of the bars that can reach a level can reach both "
+            f"({shape}). Above the {AMBIGUITY_WARNING_SHARE:.0%} mark on this "
+            f"estimator, which corresponds to a realized ambiguous share around "
+            f"the 5% at which a run stops being conclusive: on bars alone the "
+            f"stop-first assumption, not the data, will decide this result. "
+            f"Widen the exits, move to a slower timeframe, or plan on ticks."
+        )
+    else:
+        verdict = (
+            f"{expected:.0%} of the bars that can reach a level can reach both "
+            f"({shape}): below the {AMBIGUITY_WARNING_SHARE:.0%} mark on this "
+            f"upper-bound estimator, so bar resolution can settle this "
+            f"configuration."
+        )
+
+    return AmbiguityPrior(
+        applicable=True,
+        reason=None,
+        stop_points=mean_stop,
+        target_points=mean_target,
+        stop_points_std=std_stop,
+        target_points_std=std_target,
+        level_distance_points=mean_separation,
+        nearest_level_points=nearest,
+        mean_bar_range_points=mean_range,
+        both_reachable_share=both,
+        any_reachable_share=any_reachable,
+        expected_ambiguous_share=expected,
+        exceeds_threshold=exceeds,
+        verdict=verdict,
+    )
 
 
 def forward_points(
@@ -321,6 +491,10 @@ def edge_report(
                 min_observations, significance,
             )
         )
+
+    report.ambiguity_prior = ambiguity_prior(
+        strategy, bars, point, signals.indicators, long | short
+    ).as_dict()
 
     winners = [s for s in report.stats if s.beats_cost]
     report.passed = bool(winners)

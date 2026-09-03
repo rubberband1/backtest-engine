@@ -28,6 +28,7 @@ import pandas as pd
 from core.data.provider import SYMBOL_SPEC_COST_FIELDS, SymbolSpec, SymbolSpecSnapshot, Timeframe
 from core.engine.backtester import BacktestResult
 from core.engine.costs import CommissionModel, CostModel, SpreadPolicy, SwapModel
+from core.metrics.ambiguity import uncertainty_band
 from core.metrics.breakeven import breakeven_from_trades
 from core.metrics.performance import PerformanceReport
 from core.serialization import json_safe
@@ -319,6 +320,7 @@ class RunStore:
         strategy_report: PerformanceReport,
         benchmark_report: PerformanceReport | None = None,
         spec: StrategySpec | None = None,
+        symbol_spec: SymbolSpec | None = None,
     ) -> RunMeta:
         path = self.path_for(run_id)
         meta = self.load_meta(run_id)
@@ -334,6 +336,16 @@ class RunStore:
                 result.trades,
                 variable_exits=has_variable_exits(spec.exit) if spec else False,
             ).as_dict(),
+            # the ambiguity band is not optional reporting: on a run where the
+            # stop-first assumption decides the sign of the result, a single
+            # equity number is a claim the data does not support
+            "uncertainty": (
+                uncertainty_band(
+                    result.trades, symbol_spec, result.initial_equity
+                ).as_dict()
+                if symbol_spec is not None
+                else None
+            ),
             "execution": {
                 "signals_long": result.signals.counts["long"],
                 "signals_short": result.signals.counts["short"],

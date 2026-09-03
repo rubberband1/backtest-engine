@@ -27,7 +27,7 @@ import numpy as np
 import pandas as pd
 
 from core.data.provider import DataProvider, SymbolSpec, Timeframe
-from core.engine.costs import money_per_point
+from core.metrics.ambiguity import net_pnl_at
 from core.serialization import json_safe
 from core.strategy.spec import StrategySpec
 
@@ -158,27 +158,10 @@ def _recompute_net_pnl(
 ) -> float:
     """Net PnL of the same trade exiting at `exit_level`.
 
-    Rebuilds the engine's accounting from the stored fields: the spread is
-    already paid on the leg the engine charged it on, the commission is a
-    round turn, and the swap does not move because the exit stays inside the
-    same bar.
+    The same accounting the uncertainty band uses for its optimistic edge, so
+    a tick-resolved result always lands inside the band the run reported.
     """
-    direction = int(trade["direction"])
-    spread_price = float(trade["spread_points"]) * symbol_spec.point
-    entry_raw = (
-        float(trade["entry_price"]) - spread_price
-        if direction > 0
-        else float(trade["entry_price"])
-    )
-    exit_raw = exit_level if direction > 0 else exit_level - spread_price
-    value_per_point = money_per_point(symbol_spec, float(trade["lots"]))
-    gross = direction * (exit_raw - entry_raw) / symbol_spec.point * value_per_point
-    return float(
-        gross
-        - float(trade["spread_cost"])
-        - float(trade["commission"])
-        + float(trade["swap"])
-    )
+    return net_pnl_at(trade, exit_level, symbol_spec)
 
 
 def resolve_ambiguous(
