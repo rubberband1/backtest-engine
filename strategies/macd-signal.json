@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "id": "macd-signal",
+  "name": "MACD signal line cross (12, 26, 9)",
+  "description": "TREND FOLLOWING. Gerald Appel's rule from the late 1970s: long when the MACD line crosses above its 9-period signal line, short on the opposite cross. Canonical parameters, declared and not searched: 12/26/9 are Appel's own, chosen for daily bars back when a trading week was six days. BORN ON THE DAILY, on equities. The crossing measures a smoothed change of momentum; on intraday bars it is the same arithmetic over minutes instead of months, and there is no reason for those constants to carry over.",
+  "instrument": { "symbol": "XAUUSD.r", "timeframe": "H1" },
+
+  "indicators": [
+    { "id": "mac", "type": "macd", "params": { "fast": 12, "slow": 26, "signal": 9, "source": "close" } },
+    { "id": "atr", "type": "atr", "params": { "period": 14 } }
+  ],
+
+  "entry": {
+    "long": { "op": "cross_above", "left": { "ref": "mac.macd" }, "right": { "ref": "mac.signal" } },
+    "short": { "op": "cross_below", "left": { "ref": "mac.macd" }, "right": { "ref": "mac.signal" } }
+  },
+
+  "exit": {
+    "stop_loss": { "type": "atr", "indicator": "atr", "mult": 2.0 },
+    "take_profit": { "type": "atr", "indicator": "atr", "mult": 4.0 },
+    "time_stop": { "bars": 150 },
+    "signal_exit": null
+  },
+
+  "sizing": {
+    "type": "equity_per_step",
+    "equity_per_001_lot": 100,
+    "min_lot": 0.01,
+    "max_lot": 0.05
+  },
+
+  "risk": {
+    "max_open_positions": 1,
+    "cooldown_minutes": 0,
+    "max_trades_per_day": null,
+    "max_spread_points": null,
+    "session": null,
+    "news_filter": null
+  }
+}

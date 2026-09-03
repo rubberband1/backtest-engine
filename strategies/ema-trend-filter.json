@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "id": "ema-trend-filter",
+  "name": "EMA 200 trend filter",
+  "description": "TREND FOLLOWING, and meant to be a FILTER rather than a strategy. The condition is the one every trend-following desk uses as a regime switch: price above its 200-period exponential average is an uptrend, below it a downtrend. Canonical parameter: 200 periods, the standard long-horizon average. BORN ON THE DAILY. Here it is written as a standalone spec so it can be measured on its own before being trusted as a filter: its entry conditions are the crossings themselves, which is the weakest possible way to trade it. To use it as intended, copy its `long`/`short` conditions into an `and` block alongside another strategy's entry - a mean-reversion rule taken only in the direction of the trend is a different bet from the same rule taken in both. Measuring the filter alone first says whether the regime it defines is worth anything on this instrument and timeframe.",
+  "instrument": { "symbol": "XAUUSD.r", "timeframe": "H1" },
+
+  "indicators": [
+    { "id": "trend", "type": "ema", "params": { "period": 200, "source": "close" } },
+    { "id": "atr", "type": "atr", "params": { "period": 14 } }
+  ],
+
+  "entry": {
+    "long": { "op": "cross_above", "left": { "bar": "close" }, "right": { "ref": "trend" } },
+    "short": { "op": "cross_below", "left": { "bar": "close" }, "right": { "ref": "trend" } }
+  },
+
+  "exit": {
+    "stop_loss": { "type": "atr", "indicator": "atr", "mult": 2.0 },
+    "take_profit": { "type": "atr", "indicator": "atr", "mult": 4.0 },
+    "time_stop": { "bars": 200 },
+    "signal_exit": null
+  },
+
+  "sizing": {
+    "type": "equity_per_step",
+    "equity_per_001_lot": 100,
+    "min_lot": 0.01,
+    "max_lot": 0.05
+  },
+
+  "risk": {
+    "max_open_positions": 1,
+    "cooldown_minutes": 0,
+    "max_trades_per_day": null,
+    "max_spread_points": null,
+    "session": null,
+    "news_filter": null
+  }
+}

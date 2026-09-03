@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "id": "atr-volatility-breakout",
+  "name": "Channel breakout confirmed by expanding ATR",
+  "description": "TREND FOLLOWING. A breakout taken only while volatility is expanding: the close leaves a 20-period Donchian channel and the ATR(14) is rising, the pattern behind every squeeze-then-expansion rule (Bollinger's squeeze, Crabel's opening range work). BORN ON THE DAILY, on futures. Honest note on the implementation: the textbook volatility breakout is `close > previous close + k x ATR`, which needs arithmetic between operands, and the spec language deliberately has none - a spec is data, not an expression to evaluate. The closest form expressible here is the channel breakout with a rising-ATR confirmation, which shares the hypothesis (a move that starts while volatility expands continues) without pretending to be the same formula. Compared with donchian-breakout, the only difference is that confirmation: the pair measures what the volatility filter is worth.",
+  "instrument": { "symbol": "XAUUSD.r", "timeframe": "H1" },
+
+  "indicators": [
+    { "id": "dc", "type": "donchian", "params": { "period": 20 } },
+    { "id": "atr", "type": "atr", "params": { "period": 14 } }
+  ],
+
+  "entry": {
+    "long": {
+      "op": "and",
+      "operands": [
+        { "op": "cross_above", "left": { "bar": "close" }, "right": { "ref": "dc.upper" } },
+        { "op": "rising", "operand": { "ref": "atr" }, "periods": 3 }
+      ]
+    },
+    "short": {
+      "op": "and",
+      "operands": [
+        { "op": "cross_below", "left": { "bar": "close" }, "right": { "ref": "dc.lower" } },
+        { "op": "rising", "operand": { "ref": "atr" }, "periods": 3 }
+      ]
+    }
+  },
+
+  "exit": {
+    "stop_loss": { "type": "atr", "indicator": "atr", "mult": 2.0 },
+    "take_profit": { "type": "atr", "indicator": "atr", "mult": 4.0 },
+    "time_stop": { "bars": 150 },
+    "signal_exit": null
+  },
+
+  "sizing": {
+    "type": "equity_per_step",
+    "equity_per_001_lot": 100,
+    "min_lot": 0.01,
+    "max_lot": 0.05
+  },
+
+  "risk": {
+    "max_open_positions": 1,
+    "cooldown_minutes": 0,
+    "max_trades_per_day": null,
+    "max_spread_points": null,
+    "session": null,
+    "news_filter": null
+  }
+}

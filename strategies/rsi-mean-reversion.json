@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "id": "rsi-mean-reversion",
+  "name": "RSI 14 oversold / overbought",
+  "description": "MEAN REVERSION. Wilder's original rule from New Concepts in Technical Trading Systems (1978): buy when RSI(14) crosses below 30, sell when it crosses above 70. Canonical parameters, declared and not searched: 14 periods with the 30/70 thresholds is what Wilder published. BORN ON THE DAILY, on commodity futures. On M5 an RSI(14) spans a little over an hour and reaches its extremes several times a day, so the rule fires far more often against far smaller moves. Exits on ATR: the reversion target is one unit of current volatility, the stop two.",
+  "instrument": { "symbol": "XAUUSD.r", "timeframe": "H1" },
+
+  "indicators": [
+    { "id": "rsi", "type": "rsi", "params": { "period": 14, "source": "close" } },
+    { "id": "atr", "type": "atr", "params": { "period": 14 } }
+  ],
+
+  "entry": {
+    "long": { "op": "cross_below", "left": { "ref": "rsi" }, "right": { "const": 30 } },
+    "short": { "op": "cross_above", "left": { "ref": "rsi" }, "right": { "const": 70 } }
+  },
+
+  "exit": {
+    "stop_loss": { "type": "atr", "indicator": "atr", "mult": 2.0 },
+    "take_profit": { "type": "atr", "indicator": "atr", "mult": 1.0 },
+    "time_stop": { "bars": 50 },
+    "signal_exit": null
+  },
+
+  "sizing": {
+    "type": "equity_per_step",
+    "equity_per_001_lot": 100,
+    "min_lot": 0.01,
+    "max_lot": 0.05
+  },
+
+  "risk": {
+    "max_open_positions": 1,
+    "cooldown_minutes": 0,
+    "max_trades_per_day": null,
+    "max_spread_points": null,
+    "session": null,
+    "news_filter": null
+  }
+}

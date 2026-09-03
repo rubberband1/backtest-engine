@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "id": "ma-crossover",
+  "name": "Moving average crossover (50/200)",
+  "description": "TREND FOLLOWING. The golden cross and death cross: the 50-period SMA crossing the 200-period one. Canonical parameters, declared and not searched: 50/200 is the pair the literature has used since Granville popularized moving-average rules, and the pair Brock, Lakonishok and LeBaron tested in 1992. BORN ON THE DAILY, on equity indices. Nothing about it was designed for intraday bars: on M5 a 200-period average spans a few hours, which is not the same object as a 200-day trend, and the crossings become far more frequent and far more often noise. Exits normalized on ATR so the same file means the same thing on every instrument.",
+  "instrument": { "symbol": "XAUUSD.r", "timeframe": "H1" },
+
+  "indicators": [
+    { "id": "fast", "type": "sma", "params": { "period": 50, "source": "close" } },
+    { "id": "slow", "type": "sma", "params": { "period": 200, "source": "close" } },
+    { "id": "atr", "type": "atr", "params": { "period": 14 } }
+  ],
+
+  "entry": {
+    "long": { "op": "cross_above", "left": { "ref": "fast" }, "right": { "ref": "slow" } },
+    "short": { "op": "cross_below", "left": { "ref": "fast" }, "right": { "ref": "slow" } }
+  },
+
+  "exit": {
+    "stop_loss": { "type": "atr", "indicator": "atr", "mult": 2.0 },
+    "take_profit": { "type": "atr", "indicator": "atr", "mult": 4.0 },
+    "time_stop": { "bars": 200 },
+    "signal_exit": null
+  },
+
+  "sizing": {
+    "type": "equity_per_step",
+    "equity_per_001_lot": 100,
+    "min_lot": 0.01,
+    "max_lot": 0.05
+  },
+
+  "risk": {
+    "max_open_positions": 1,
+    "cooldown_minutes": 0,
+    "max_trades_per_day": null,
+    "max_spread_points": null,
+    "session": null,
+    "news_filter": null
+  }
+}

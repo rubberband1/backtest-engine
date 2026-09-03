@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "id": "bollinger-mean-reversion",
+  "name": "Bollinger band fade (20, 2)",
+  "description": "MEAN REVERSION. The popular reading of the bands: a close below the lower band is an excess to be bought, one above the upper band an excess to be sold. Bollinger explicitly warns against trading the bands this way on their own, which is exactly why it is worth measuring instead of assuming. Canonical parameters: 20 periods, 2 standard deviations. BORN ON THE DAILY. Mirror image of bollinger-breakout: same indicator, opposite hypothesis, same data.",
+  "instrument": { "symbol": "XAUUSD.r", "timeframe": "H1" },
+
+  "indicators": [
+    { "id": "bb", "type": "bollinger", "params": { "period": 20, "deviations": 2.0, "source": "close" } },
+    { "id": "atr", "type": "atr", "params": { "period": 14 } }
+  ],
+
+  "entry": {
+    "long": { "op": "cross_below", "left": { "bar": "close" }, "right": { "ref": "bb.lower" } },
+    "short": { "op": "cross_above", "left": { "bar": "close" }, "right": { "ref": "bb.upper" } }
+  },
+
+  "exit": {
+    "stop_loss": { "type": "atr", "indicator": "atr", "mult": 2.0 },
+    "take_profit": { "type": "atr", "indicator": "atr", "mult": 1.0 },
+    "time_stop": { "bars": 50 },
+    "signal_exit": null
+  },
+
+  "sizing": {
+    "type": "equity_per_step",
+    "equity_per_001_lot": 100,
+    "min_lot": 0.01,
+    "max_lot": 0.05
+  },
+
+  "risk": {
+    "max_open_positions": 1,
+    "cooldown_minutes": 0,
+    "max_trades_per_day": null,
+    "max_spread_points": null,
+    "session": null,
+    "news_filter": null
+  }
+}

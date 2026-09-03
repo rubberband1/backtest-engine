@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "id": "bollinger-breakout",
+  "name": "Bollinger band breakout (20, 2)",
+  "description": "TREND FOLLOWING. A close outside the band read as the start of a move rather than as an excess - the reading Bollinger defends in Bollinger on Bollinger Bands (2001) against the more common fade of the same event. Canonical parameters: 20 periods, 2 standard deviations. BORN ON THE DAILY, on equity charts. It is the deliberate opposite of bollinger-mean-reversion, and the two are in this library together because on the same data at most one of them can be right: finding that both lose is the informative outcome.",
+  "instrument": { "symbol": "XAUUSD.r", "timeframe": "H1" },
+
+  "indicators": [
+    { "id": "bb", "type": "bollinger", "params": { "period": 20, "deviations": 2.0, "source": "close" } },
+    { "id": "atr", "type": "atr", "params": { "period": 14 } }
+  ],
+
+  "entry": {
+    "long": { "op": "cross_above", "left": { "bar": "close" }, "right": { "ref": "bb.upper" } },
+    "short": { "op": "cross_below", "left": { "bar": "close" }, "right": { "ref": "bb.lower" } }
+  },
+
+  "exit": {
+    "stop_loss": { "type": "atr", "indicator": "atr", "mult": 2.0 },
+    "take_profit": { "type": "atr", "indicator": "atr", "mult": 4.0 },
+    "time_stop": { "bars": 100 },
+    "signal_exit": null
+  },
+
+  "sizing": {
+    "type": "equity_per_step",
+    "equity_per_001_lot": 100,
+    "min_lot": 0.01,
+    "max_lot": 0.05
+  },
+
+  "risk": {
+    "max_open_positions": 1,
+    "cooldown_minutes": 0,
+    "max_trades_per_day": null,
+    "max_spread_points": null,
+    "session": null,
+    "news_filter": null
+  }
+}

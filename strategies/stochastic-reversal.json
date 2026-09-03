@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "id": "stochastic-reversal",
+  "name": "Stochastic 14 exit from the extremes",
+  "description": "MEAN REVERSION. George Lane's oscillator, traded the way he described it in the 1950s: the entry is not the extreme itself but the return out of it - long when %K climbs back above 20, short when it falls back below 80. Canonical parameters, declared and not searched: 14 periods with 3/3 smoothing and the 20/80 thresholds. BORN ON THE DAILY. Compared with rsi-mean-reversion it waits for the exit from the extreme instead of entering into it, which is the same hypothesis with a delay: on data where mean reversion works the delay costs entry price, and on data where it does not the delay avoids the worst fills.",
+  "instrument": { "symbol": "XAUUSD.r", "timeframe": "H1" },
+
+  "indicators": [
+    { "id": "st", "type": "stoch", "params": { "period": 14, "smooth_k": 3, "smooth_d": 3 } },
+    { "id": "atr", "type": "atr", "params": { "period": 14 } }
+  ],
+
+  "entry": {
+    "long": { "op": "cross_above", "left": { "ref": "st.k" }, "right": { "const": 20 } },
+    "short": { "op": "cross_below", "left": { "ref": "st.k" }, "right": { "const": 80 } }
+  },
+
+  "exit": {
+    "stop_loss": { "type": "atr", "indicator": "atr", "mult": 2.0 },
+    "take_profit": { "type": "atr", "indicator": "atr", "mult": 1.0 },
+    "time_stop": { "bars": 50 },
+    "signal_exit": null
+  },
+
+  "sizing": {
+    "type": "equity_per_step",
+    "equity_per_001_lot": 100,
+    "min_lot": 0.01,
+    "max_lot": 0.05
+  },
+
+  "risk": {
+    "max_open_positions": 1,
+    "cooldown_minutes": 0,
+    "max_trades_per_day": null,
+    "max_spread_points": null,
+    "session": null,
+    "news_filter": null
+  }
+}

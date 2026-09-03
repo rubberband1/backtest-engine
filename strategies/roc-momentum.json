@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "id": "roc-momentum",
+  "name": "Rate of change 12 sign flip",
+  "description": "TREND FOLLOWING (time-series momentum). The oldest rule in the family: buy when the 12-period rate of change turns positive, sell when it turns negative. Canonical parameters, declared and not searched: a 12-period lookback is the one academic time-series momentum uses (Moskowitz, Ooi and Pedersen 2012, twelve months), and the 12-month formation window of Jegadeesh and Titman 1993. BORN ON THE MONTHLY AND DAILY - it is the most brutally transplanted of the ten, since here twelve bars mean an hour on M5. Included precisely because it makes the transplant visible.",
+  "instrument": { "symbol": "XAUUSD.r", "timeframe": "H1" },
+
+  "indicators": [
+    { "id": "roc", "type": "roc", "params": { "period": 12, "source": "close" } },
+    { "id": "atr", "type": "atr", "params": { "period": 14 } }
+  ],
+
+  "entry": {
+    "long": { "op": "cross_above", "left": { "ref": "roc" }, "right": { "const": 0 } },
+    "short": { "op": "cross_below", "left": { "ref": "roc" }, "right": { "const": 0 } }
+  },
+
+  "exit": {
+    "stop_loss": { "type": "atr", "indicator": "atr", "mult": 2.0 },
+    "take_profit": { "type": "atr", "indicator": "atr", "mult": 4.0 },
+    "time_stop": { "bars": 150 },
+    "signal_exit": null
+  },
+
+  "sizing": {
+    "type": "equity_per_step",
+    "equity_per_001_lot": 100,
+    "min_lot": 0.01,
+    "max_lot": 0.05
+  },
+
+  "risk": {
+    "max_open_positions": 1,
+    "cooldown_minutes": 0,
+    "max_trades_per_day": null,
+    "max_spread_points": null,
+    "session": null,
+    "news_filter": null
+  }
+}

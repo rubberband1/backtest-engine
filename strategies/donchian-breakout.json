@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "id": "donchian-breakout",
+  "name": "Donchian 20 channel breakout",
+  "description": "TREND FOLLOWING. Richard Donchian's channel breakout, and the entry of the Turtle system Dennis and Eckhardt taught in 1983: buy a close above the highest high of the last 20 periods, sell a close below the lowest low. Canonical parameters, declared and not searched: 20 periods is the Turtles' System 1 entry, and the 2N stop below is theirs too, with N their name for the ATR. BORN ON THE DAILY, on commodity and currency futures. The Turtles also exited on a 10-period opposite breakout; here the exit is the library's standard ATR pair, so that this file differs from the others only in its entry.",
+  "instrument": { "symbol": "XAUUSD.r", "timeframe": "H1" },
+
+  "indicators": [
+    { "id": "dc", "type": "donchian", "params": { "period": 20 } },
+    { "id": "atr", "type": "atr", "params": { "period": 20 } }
+  ],
+
+  "entry": {
+    "long": { "op": "cross_above", "left": { "bar": "close" }, "right": { "ref": "dc.upper" } },
+    "short": { "op": "cross_below", "left": { "bar": "close" }, "right": { "ref": "dc.lower" } }
+  },
+
+  "exit": {
+    "stop_loss": { "type": "atr", "indicator": "atr", "mult": 2.0 },
+    "take_profit": { "type": "atr", "indicator": "atr", "mult": 4.0 },
+    "time_stop": { "bars": 200 },
+    "signal_exit": null
+  },
+
+  "sizing": {
+    "type": "equity_per_step",
+    "equity_per_001_lot": 100,
+    "min_lot": 0.01,
+    "max_lot": 0.05
+  },
+
+  "risk": {
+    "max_open_positions": 1,
+    "cooldown_minutes": 0,
+    "max_trades_per_day": null,
+    "max_spread_points": null,
+    "session": null,
+    "news_filter": null
+  }
+}
