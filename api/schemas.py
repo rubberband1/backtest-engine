@@ -355,6 +355,7 @@ class RunDetailOut(Model):
     engine_version: str
     spec_hash: str
     data_hash: str
+    symbol_spec_hash: str | None = None
     bars: int
     data_start: datetime | None
     data_end: datetime | None
@@ -365,6 +366,11 @@ class RunDetailOut(Model):
     benchmark: MetricsOut | None = None
     breakeven: BreakevenOut | None = None
     execution: ExecutionOut | None = None
+    uncertainty: UncertaintyOut | None = None
+    gates: GatesOut | None = None
+    symbol_spec: SymbolSpecOut | None = None
+    symbol_spec_read_at: datetime | None = None
+    symbol_spec_registered: bool = True
 
 
 class EquityPoint(Model):
@@ -433,6 +439,7 @@ class CompareRunOut(Model):
     start: datetime | None
     end: datetime | None
     initial_equity: float
+    symbol_spec_registered: bool = True
 
 
 class CompareMetricRow(Model):
@@ -466,6 +473,8 @@ class CompareResponse(Model):
     metrics: list[CompareMetricRow]
     config_diff: list[CompareConfigRow] = Field(default_factory=list)
     configs_identical: bool = True
+    symbol_spec_diff: list[CompareConfigRow] = Field(default_factory=list)
+    symbol_specs_identical: bool = True
     warnings: list[str] = Field(default_factory=list)
 
 

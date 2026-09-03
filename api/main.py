@@ -517,6 +517,7 @@ def get_run(run_id: str) -> s.RunDetailOut:
         engine_version=record.meta.engine_version,
         spec_hash=record.meta.spec_hash,
         data_hash=record.meta.data_hash,
+        symbol_spec_hash=record.meta.symbol_spec_hash,
         bars=record.meta.bars,
         data_start=record.meta.data_start,
         data_end=record.meta.data_end,
@@ -527,6 +528,15 @@ def get_run(run_id: str) -> s.RunDetailOut:
         benchmark=s.MetricsOut(**metrics["benchmark"]) if metrics.get("benchmark") else None,
         breakeven=s.BreakevenOut(**metrics["breakeven"]) if metrics.get("breakeven") else None,
         execution=s.ExecutionOut(**metrics["execution"]) if metrics.get("execution") else None,
+        uncertainty=(
+            s.UncertaintyOut(**metrics["uncertainty"]) if metrics.get("uncertainty") else None
+        ),
+        gates=s.GatesOut(**metrics["gates"]) if metrics.get("gates") else None,
+        symbol_spec=(
+            s.SymbolSpecOut(**asdict(record.symbol_spec.spec)) if record.symbol_spec else None
+        ),
+        symbol_spec_read_at=record.symbol_spec.read_at if record.symbol_spec else None,
+        symbol_spec_registered=record.symbol_spec_registered,
     )
 
 
@@ -751,6 +761,12 @@ def compare_runs(request: s.CompareRequest) -> s.CompareResponse:
         )
 
     config_diff, configs_identical = _config_diff(records)
+    symbol_spec_diff, symbol_specs_identical = _symbol_spec_diff(records)
+    if any(not record.symbol_spec_registered for record in records):
+        warnings.append(
+            "at least one run predates SymbolSpec pinning (A1): its cost fields "
+            "cannot be compared and must not be assumed identical to the others"
+        )
 
     return s.CompareResponse(
         runs=[
@@ -764,6 +780,7 @@ def compare_runs(request: s.CompareRequest) -> s.CompareResponse:
                 start=record.meta.data_start,
                 end=record.meta.data_end,
                 initial_equity=record.config.initial_equity,
+                symbol_spec_registered=record.symbol_spec_registered,
             )
             for record in records
         ],
@@ -774,6 +791,8 @@ def compare_runs(request: s.CompareRequest) -> s.CompareResponse:
         metrics=metrics,
         config_diff=config_diff,
         configs_identical=configs_identical,
+        symbol_spec_diff=symbol_spec_diff,
+        symbol_specs_identical=symbol_specs_identical,
         warnings=warnings,
     )
 
@@ -807,6 +826,36 @@ def _config_diff(records) -> tuple[list[s.CompareConfigRow], bool]:
     return rows, not rows
 
 
+def _symbol_spec_diff(records) -> tuple[list[s.CompareConfigRow], bool]:
+    """SymbolSpec fields that differ between the compared runs.
+
+    An unregistered run (no symbol_spec.json, pre-A1) contributes `None` for
+    every field: it never claims agreement with the others, since we have no
+    pinned record of what it actually used.
+    """
+    payloads = [
+        asdict(record.symbol_spec.spec) if record.symbol_spec else {}
+        for record in records
+    ]
+    keys: list[str] = []
+    for payload in payloads:
+        for key in payload:
+            if key not in keys:
+                keys.append(key)
+    rows: list[s.CompareConfigRow] = []
+    for key in keys:
+        values = [payload.get(key) for payload in payloads]
+        if any(value != values[0] for value in values[1:]):
+            rows.append(
+                s.CompareConfigRow(
+                    key=key,
+                    values=[None if v is None else str(v) for v in values],
+                )
+            )
+    identical = not rows and all(record.symbol_spec is not None for record in records)
+    return rows, identical
+
+
 def _metric_value(metrics: dict[str, Any], key: str) -> float | None:
     value = metrics.get(key)
     if value is None or isinstance(value, str):
@@ -816,6 +865,21 @@ def _metric_value(metrics: dict[str, Any], key: str) -> float | None:
 
 
 # -- validation ----------------------------------------------------------
+
+
+def _pinned_symbol_spec(record):
+    """The SymbolSpec the run actually used, not whatever the broker says today.
+
+    A run pins its SymbolSpec at execution time (A1): reusing the live
+    resolver here for revalidation would reintroduce the exact drift the
+    pinning exists to prevent (swap rates or tick_value moving between the
+    original run and a later walk-forward/permutation/tick-resolve on it).
+    Only a run older than the pinning mechanism (no symbol_spec.json) falls
+    back to the resolver, and it does so best-effort.
+    """
+    if record.symbol_spec is not None:
+        return record.symbol_spec.spec
+    return resolver.symbol_spec(record.config.symbol)
 
 
 def _run_context(run_id: str):
@@ -830,7 +894,7 @@ def _run_context(run_id: str):
     bars = load_bars(
         cache, record.config.symbol, record.config.tf, record.config.start, record.config.end
     )
-    symbol_spec = resolver.symbol_spec(record.config.symbol)
+    symbol_spec = _pinned_symbol_spec(record)
     return record, bars, symbol_spec
 
 
@@ -995,7 +1059,7 @@ def _grid_trials(record, grid: dict[str, list[Any]]) -> tuple[np.ndarray, list[T
     bars = load_bars(
         cache, record.config.symbol, record.config.tf, record.config.start, record.config.end
     )
-    symbol_spec = resolver.symbol_spec(record.config.symbol)
+    symbol_spec = _pinned_symbol_spec(record)
     server_tz = resolver.server_timezone()
     config = _backtest_config(record)
 
@@ -1056,7 +1120,7 @@ def post_tick_resolve(request: s.TickResolveRequest) -> s.TickResolveResponse:
             status_code=409,
             detail=f"run {request.run_id} is in status {record.meta.status}",
         )
-    symbol_spec = resolver.symbol_spec(record.config.symbol)
+    symbol_spec = _pinned_symbol_spec(record)
 
     try:
         from core.data.mt5_provider import MT5Provider
