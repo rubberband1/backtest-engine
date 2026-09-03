@@ -7,6 +7,7 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 import pytest
 
+from core.engine.backtester import BacktestConfig, run_backtest
 from core.engine.costs import (
     CommissionModel,
     CostModel,
@@ -19,7 +20,7 @@ from core.engine.costs import (
 )
 from core.engine.sizing import lots_for
 from core.strategy.spec import Sizing
-from tests.conftest_engine import random_walk, symbol_spec
+from tests.conftest_engine import bars_from, flat_bars, random_walk, spec_from, symbol_spec
 
 ATHENS = ZoneInfo("Europe/Athens")
 
@@ -148,6 +149,45 @@ def test_zero_cost_model_costs_nothing() -> None:
     assert zero.swap.charge(
         symbol_spec(swap_long=-10), 1, 1.0, utc(2024, 1, 1), utc(2024, 2, 1), ATHENS
     ) == 0.0
+
+
+def test_swap_only_charged_on_trades_crossing_server_midnight() -> None:
+    """A1 audit: a 60-bar M1 time stop must pay swap only when the holding
+    period actually crosses a server midnight, never merely because it is
+    held for an "overnight-length" number of bars.
+
+    Both trades below are held the same ~61 minutes by the same time stop;
+    only the second one's window straddles the Athens midnight.
+    """
+    spec = spec_from(
+        exit_block={"stop_loss": None, "take_profit": None,
+                    "time_stop": {"bars": 60}, "signal_exit": None},
+    )
+    instrument = symbol_spec(point=0.01, tick_size=0.01, tick_value=1.0, swap_long=-8.0)
+    costs = CostModel(spread=SpreadPolicy(mode="fixed", value=5.0), swap=SwapModel(mode="points"))
+    rows = [
+        {"open": 2000.0, "high": 2000.5, "low": 1999.5, "close": 2000.4, "spread": 5},
+        *flat_bars(70, price=2000.4, spread=5),
+    ]
+
+    # entry 10:00 Athens, exit ~11:01 Athens: same server day
+    no_crossing = run_backtest(
+        spec, bars_from(rows, start="2024-01-15 07:59"), instrument, ATHENS,
+        BacktestConfig(initial_equity=1000.0, costs=costs),
+    )
+    assert len(no_crossing.trades) == 1
+    assert no_crossing.trades.iloc[0]["swap"] == 0.0
+
+    # entry 23:30 Athens, exit ~00:31 Athens: exactly one midnight crossed
+    crossing = run_backtest(
+        spec, bars_from(rows, start="2024-01-15 21:29"), instrument, ATHENS,
+        BacktestConfig(initial_equity=1000.0, costs=costs),
+    )
+    assert len(crossing.trades) == 1
+    trade = crossing.trades.iloc[0]
+    expected = points_to_money(-8.0, instrument, trade["lots"])  # one night
+    assert trade["swap"] == pytest.approx(expected)
+    assert trade["swap"] != 0.0
 
 
 # -- sizing --------------------------------------------------------------
