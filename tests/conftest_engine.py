@@ -1,12 +1,13 @@
 """Fixtures shared by the engine tests. Imported explicitly, not auto-used."""
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any
 
 import numpy as np
 import pandas as pd
 
-from core.data.provider import SymbolSpec
+from core.data.provider import SymbolSpec, SymbolSpecSnapshot
 from core.strategy.spec import StrategySpec
 
 
@@ -33,6 +34,13 @@ def symbol_spec(
         swap_short=swap_short,
         currency_profit="USD",
         trade_mode="full",
+    )
+
+
+def symbol_spec_snapshot(read_at: datetime | None = None, **kwargs: Any) -> SymbolSpecSnapshot:
+    return SymbolSpecSnapshot(
+        spec=symbol_spec(**kwargs),
+        read_at=read_at or datetime(2024, 1, 1, tzinfo=timezone.utc),
     )
 
 

@@ -385,7 +385,7 @@ def _prepare(request: s.StrategyRef, config: s.RunConfigIn):
             detail=f"{len(bars)} bars exceed the cap of {MAX_BARS}: "
             f"narrow the period",
         )
-    symbol_spec = resolver.symbol_spec(run_config.symbol)
+    symbol_spec = resolver.symbol_spec_snapshot(run_config.symbol)
     return spec, run_config, bars, symbol_spec
 
 
@@ -403,7 +403,7 @@ def post_edge(request: s.EdgeRequest) -> s.EdgeResponse:
 
     started = time.perf_counter()
     report = run_edge_gate(
-        spec, run_config, bars, symbol_spec, request.horizons, request.min_observations
+        spec, run_config, bars, symbol_spec.spec, request.horizons, request.min_observations
     )
     logger.info("gate zero in %.2fs", time.perf_counter() - started)
     return s.EdgeResponse(**report.as_dict())
@@ -417,7 +417,7 @@ def post_backtest(request: s.BacktestRequest) -> s.BacktestResponse:
     """Launches a backtest. If it takes over two seconds the run_id returns immediately."""
     spec, run_config, bars, symbol_spec = _prepare(request, request.config)
     server_tz = resolver.server_timezone()
-    run_id, fingerprint = plan_run(spec, run_config, bars)
+    run_id, fingerprint = plan_run(spec, run_config, bars, symbol_spec.spec)
 
     if store.exists(run_id) and not request.force:
         meta = store.load_meta(run_id)
@@ -439,6 +439,7 @@ def post_backtest(request: s.BacktestRequest) -> s.BacktestResponse:
     store.begin_run(
         run_id, spec, run_config, fingerprint, len(bars),
         bars.index[0].to_pydatetime(), bars.index[-1].to_pydatetime(),
+        symbol_spec,
     )
 
     assert _executor is not None

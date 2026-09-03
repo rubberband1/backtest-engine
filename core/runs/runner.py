@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import json
 import logging
-from dataclasses import asdict
 from datetime import datetime, timezone, tzinfo
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -16,7 +15,7 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 
 from core.data.cache import ParquetCache
-from core.data.provider import SymbolSpec, Timeframe
+from core.data.provider import SymbolSpec, SymbolSpecSnapshot, Timeframe
 from core.engine.backtester import BacktestConfig, run_backtest
 from core.metrics.performance import buy_and_hold, compute_metrics
 from core.research.edge import EdgeReport, edge_report
@@ -53,23 +52,30 @@ class SymbolResolver:
 
     def __init__(self, cache: ParquetCache) -> None:
         self.cache = cache
-        self._memo: dict[str, SymbolSpec] = {}
+        self._memo: dict[str, SymbolSpecSnapshot] = {}
         self._tz: tzinfo | None = None
 
     def _symbol_dir(self, symbol: str) -> Path:
         return self.cache.root / self.cache._slug(symbol)
 
-    def _stored_spec(self, symbol: str) -> SymbolSpec | None:
+    def _stored_snapshot(self, symbol: str) -> SymbolSpecSnapshot | None:
         target = self._symbol_dir(symbol) / SPEC_CACHE_FILE
         if not target.exists():
             return None
-        return SymbolSpec(**json.loads(target.read_text(encoding="utf-8")))
+        payload = json.loads(target.read_text(encoding="utf-8"))
+        if "spec" in payload and "read_at" in payload:
+            return SymbolSpecSnapshot.from_dict(payload)
+        # pre-A1 cache file: a bare SymbolSpec dict with no read timestamp.
+        # The file's own mtime is the best available estimate of when it was
+        # read; it will be replaced with a real one on the next refresh().
+        read_at = datetime.fromtimestamp(target.stat().st_mtime, tz=timezone.utc)
+        return SymbolSpecSnapshot(spec=SymbolSpec(**payload), read_at=read_at)
 
-    def _store_spec(self, spec: SymbolSpec) -> None:
-        folder = self._symbol_dir(spec.name)
+    def _store_spec(self, snapshot: SymbolSpecSnapshot) -> None:
+        folder = self._symbol_dir(snapshot.spec.name)
         folder.mkdir(parents=True, exist_ok=True)
         (folder / SPEC_CACHE_FILE).write_text(
-            json.dumps(asdict(spec), indent=2), encoding="utf-8"
+            json.dumps(snapshot.to_dict(), indent=2), encoding="utf-8"
         )
 
     def _stored_timezone(self) -> tzinfo | None:
@@ -95,19 +101,21 @@ class SymbolResolver:
         with MT5Provider(server_timezone=fallback) as provider:
             specs = provider.list_symbols()
             zone = provider.server_timezone
+        read_at = datetime.now(timezone.utc)
         self._tz = zone
         self._store_timezone(zone)
         wanted = set(symbols) if symbols else None
         for spec in specs:
             if wanted is None or spec.name in wanted:
-                self._memo[spec.name] = spec
-                self._store_spec(spec)
+                snapshot = SymbolSpecSnapshot(spec=spec, read_at=read_at)
+                self._memo[spec.name] = snapshot
+                self._store_spec(snapshot)
         return specs
 
-    def symbol_spec(self, symbol: str) -> SymbolSpec:
+    def symbol_spec_snapshot(self, symbol: str) -> SymbolSpecSnapshot:
         if symbol in self._memo:
             return self._memo[symbol]
-        stored = self._stored_spec(symbol)
+        stored = self._stored_snapshot(symbol)
         if stored is not None:
             self._memo[symbol] = stored
             return stored
@@ -121,6 +129,9 @@ class SymbolResolver:
         if symbol not in self._memo:
             raise EnvironmentUnavailable(f"the broker does not list symbol {symbol}")
         return self._memo[symbol]
+
+    def symbol_spec(self, symbol: str) -> SymbolSpec:
+        return self.symbol_spec_snapshot(symbol).spec
 
     def server_timezone(self) -> tzinfo:
         if self._tz is not None:
@@ -184,11 +195,11 @@ def load_bars(
 
 
 def plan_run(
-    spec: StrategySpec, config: RunConfig, bars: pd.DataFrame
+    spec: StrategySpec, config: RunConfig, bars: pd.DataFrame, symbol_spec: SymbolSpec
 ) -> tuple[str, str]:
     """run_id and data fingerprint, without executing anything."""
     fingerprint = data_fingerprint(bars)
-    return compute_run_id(spec, config, fingerprint), fingerprint
+    return compute_run_id(spec, config, fingerprint, symbol_spec), fingerprint
 
 
 def execute_run(
@@ -196,18 +207,19 @@ def execute_run(
     spec: StrategySpec,
     config: RunConfig,
     bars: pd.DataFrame,
-    symbol_spec: SymbolSpec,
+    symbol_spec: SymbolSpecSnapshot,
     server_tz: tzinfo,
     run_id: str | None = None,
 ) -> RunMeta:
     """Runs the backtest and persists the run. Raises if anything goes wrong."""
     fingerprint = data_fingerprint(bars)
-    run_id = run_id or compute_run_id(spec, config, fingerprint)
+    run_id = run_id or compute_run_id(spec, config, fingerprint, symbol_spec.spec)
 
     if not store.exists(run_id):
         store.begin_run(
             run_id, spec, config, fingerprint, len(bars),
             bars.index[0].to_pydatetime(), bars.index[-1].to_pydatetime(),
+            symbol_spec,
         )
 
     try:
@@ -215,7 +227,7 @@ def execute_run(
         result = run_backtest(
             spec,
             bars,
-            symbol_spec,
+            symbol_spec.spec,
             server_tz,
             BacktestConfig(
                 initial_equity=config.initial_equity,
@@ -227,7 +239,7 @@ def execute_run(
             result.trades, result.equity, result.timeframe, config.initial_equity, spec.id
         )
         benchmark = buy_and_hold(
-            bars, symbol_spec, spec.sizing, result.timeframe,
+            bars, symbol_spec.spec, spec.sizing, result.timeframe,
             config.initial_equity, costs, server_tz,
         )
         return store.finish_run(run_id, result, strategy_report, benchmark)

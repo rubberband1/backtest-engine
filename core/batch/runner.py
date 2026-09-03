@@ -186,15 +186,24 @@ def _execute_cell(cell: BatchCell) -> CellResult:
         payload["start"] = cell.period.start
         payload["end"] = cell.period.end
         config = RunConfig(**payload)
+        # the instrument block is not decoration: the engine reads the
+        # timeframe from it to count the time stop in session bars, so a cell
+        # run over other bars than the spec declares would silently apply the
+        # wrong holding limit. The symbol is bound too, so the run folder
+        # records which instrument it actually ran on.
+        spec = apply_params(
+            spec,
+            {"instrument.symbol": cell.symbol, "instrument.timeframe": config.timeframe},
+        )
 
         cache: ParquetCache = _CONTEXT["cache"]
         store: RunStore = _CONTEXT["store"]
         resolver: SymbolResolver = _CONTEXT["resolver"]
 
         bars = load_bars(cache, cell.symbol, config.tf, config.start, config.end)
-        symbol_spec = resolver.symbol_spec(cell.symbol)
+        symbol_spec = resolver.symbol_spec_snapshot(cell.symbol)
         server_tz = resolver.server_timezone()
-        run_id, _ = plan_run(spec, config, bars)
+        run_id, _ = plan_run(spec, config, bars, symbol_spec.spec)
         result.run_id = run_id
         result.bars = int(len(bars))
 

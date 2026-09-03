@@ -7,7 +7,7 @@ interface and binding for every future provider.
 from __future__ import annotations
 
 import abc
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import datetime
 from enum import Enum
 from types import TracebackType
@@ -87,6 +87,48 @@ class SymbolSpec:
     swap_short: float
     currency_profit: str
     trade_mode: str
+
+
+# Fields that change what a trade costs. A drift here changes results silently
+# (the broker moves swap rates, tick_value tracks an FX pair) and must be part
+# of a run's identity; digits/currency_profit/trade_mode/name are descriptive
+# and left out on purpose.
+SYMBOL_SPEC_COST_FIELDS: tuple[str, ...] = (
+    "point",
+    "digits",
+    "contract_size",
+    "tick_value",
+    "tick_size",
+    "swap_long",
+    "swap_short",
+    "volume_min",
+    "volume_max",
+    "volume_step",
+)
+
+
+@dataclass(frozen=True)
+class SymbolSpecSnapshot:
+    """A `SymbolSpec` together with when it was read from the broker.
+
+    `tick_value` moves with FX rates and swap rates are changed by the broker
+    without notice: two reads of "the same" instrument hours apart can differ
+    in the numbers that decide the result. Persisting the spec without the
+    read timestamp makes that drift invisible after the fact.
+    """
+
+    spec: SymbolSpec
+    read_at: datetime
+
+    def to_dict(self) -> dict[str, object]:
+        return {"read_at": self.read_at.isoformat(), "spec": asdict(self.spec)}
+
+    @classmethod
+    def from_dict(cls, payload: dict[str, object]) -> "SymbolSpecSnapshot":
+        return cls(
+            spec=SymbolSpec(**payload["spec"]),  # type: ignore[arg-type]
+            read_at=datetime.fromisoformat(payload["read_at"]),  # type: ignore[arg-type]
+        )
 
 
 class DataProvider(abc.ABC):

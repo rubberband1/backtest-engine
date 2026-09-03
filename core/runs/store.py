@@ -25,7 +25,7 @@ from typing import Any, Iterable, Literal
 import numpy as np
 import pandas as pd
 
-from core.data.provider import Timeframe
+from core.data.provider import SYMBOL_SPEC_COST_FIELDS, SymbolSpec, SymbolSpecSnapshot, Timeframe
 from core.engine.backtester import BacktestResult
 from core.engine.costs import CommissionModel, CostModel, SpreadPolicy, SwapModel
 from core.metrics.breakeven import breakeven_from_trades
@@ -44,6 +44,7 @@ META_FILE = "meta.json"
 METRICS_FILE = "metrics.json"
 TRADES_FILE = "trades.parquet"
 EQUITY_FILE = "equity.parquet"
+SYMBOL_SPEC_FILE = "symbol_spec.json"
 
 
 class RunNotFound(KeyError):
@@ -113,6 +114,17 @@ def spec_hash(spec: StrategySpec) -> str:
     ).hexdigest()
 
 
+def symbol_spec_cost_hash(symbol_spec: SymbolSpec) -> str:
+    """Hash of only the fields that change what a trade costs.
+
+    Digits, currency_profit, trade_mode and name are descriptive and left
+    out: including them would invalidate every run_id on a broker relabeling
+    that changes nothing about the result.
+    """
+    payload = {field: getattr(symbol_spec, field) for field in SYMBOL_SPEC_COST_FIELDS}
+    return hashlib.sha256(_canonical(payload).encode("utf-8")).hexdigest()
+
+
 def data_fingerprint(bars: pd.DataFrame) -> str:
     """Exact fingerprint of the bars used.
 
@@ -130,12 +142,18 @@ def data_fingerprint(bars: pd.DataFrame) -> str:
     return digest.hexdigest()[:32]
 
 
-def compute_run_id(spec: StrategySpec, config: RunConfig, fingerprint: str) -> str:
+def compute_run_id(
+    spec: StrategySpec, config: RunConfig, fingerprint: str, symbol_spec: SymbolSpec
+) -> str:
     payload = {
         "engine": ENGINE_VERSION,
         "spec": spec.model_dump(mode="json"),
         "config": config.to_dict(),
         "data": fingerprint,
+        # cost-relevant SymbolSpec fields: the broker can change swap rates or
+        # tick_value between two otherwise identical runs, and without this the
+        # same run_id would silently mean two different results.
+        "symbol_spec": symbol_spec_cost_hash(symbol_spec),
     }
     return hashlib.sha256(_canonical(payload).encode("utf-8")).hexdigest()[:16]
 
@@ -149,6 +167,7 @@ class RunMeta:
     spec_id: str
     spec_hash: str
     data_hash: str
+    symbol_spec_hash: str | None = None
     bars: int = 0
     data_start: datetime | None = None
     data_end: datetime | None = None
@@ -207,6 +226,17 @@ class RunRecord:
     spec: StrategySpec
     config: RunConfig
     metrics: dict[str, Any] = field(default_factory=dict)
+    symbol_spec: SymbolSpecSnapshot | None = None
+
+    @property
+    def symbol_spec_registered(self) -> bool:
+        """False for a run persisted before the symbol_spec snapshot existed.
+
+        Such a run must not be assumed to have used the SymbolSpec current on
+        disk today: the broker may have changed swap rates or tick_value since
+        then, and the run predates the mechanism that would have caught it.
+        """
+        return self.symbol_spec is not None
 
     def trades(self) -> pd.DataFrame:
         target = self.path / TRADES_FILE
@@ -251,6 +281,7 @@ class RunStore:
         bars: int,
         data_start: datetime | None,
         data_end: datetime | None,
+        symbol_spec: SymbolSpecSnapshot,
     ) -> RunMeta:
         """Creates the folder and marks the run as running."""
         path = self.path_for(run_id)
@@ -258,6 +289,10 @@ class RunStore:
         (path / SPEC_FILE).write_text(spec.to_json() + "\n", encoding="utf-8")
         (path / CONFIG_FILE).write_text(
             json.dumps(config.to_dict(), indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
+        (path / SYMBOL_SPEC_FILE).write_text(
+            json.dumps(symbol_spec.to_dict(), indent=2, ensure_ascii=False) + "\n",
             encoding="utf-8",
         )
         meta = RunMeta(
@@ -268,6 +303,7 @@ class RunStore:
             spec_id=spec.id,
             spec_hash=spec_hash(spec),
             data_hash=fingerprint,
+            symbol_spec_hash=symbol_spec_cost_hash(symbol_spec.spec),
             bars=bars,
             data_start=data_start,
             data_end=data_end,
@@ -355,8 +391,14 @@ class RunStore:
             if metrics_path.exists()
             else {}
         )
+        symbol_spec_path = path / SYMBOL_SPEC_FILE
+        symbol_spec = (
+            SymbolSpecSnapshot.from_dict(json.loads(symbol_spec_path.read_text(encoding="utf-8")))
+            if symbol_spec_path.exists()
+            else None
+        )
         return RunRecord(run_id=run_id, path=path, meta=meta, spec=spec, config=config,
-                         metrics=metrics)
+                         metrics=metrics, symbol_spec=symbol_spec)
 
     def list_runs(
         self,
