@@ -1,4 +1,6 @@
+import { DataUpdate } from "../components/DataUpdate";
 import { NumberField } from "../components/NumberField";
+import { Progress } from "../components/Progress";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   api,
@@ -53,6 +55,10 @@ export function RunPage() {
 
   const [coverage, setCoverage] = useState<Coverage | null>(null);
   const [coverageBusy, setCoverageBusy] = useState(false);
+  // bumped when a download finishes, so the coverage is re-read without
+  // duplicating the effect that reads it
+  const [coverageNonce, setCoverageNonce] = useState(0);
+  const reloadCoverage = () => setCoverageNonce((n) => n + 1);
 
   const [edge, setEdge] = useState<EdgeReport | null>(null);
   const [edgeBusy, setEdgeBusy] = useState(false);
@@ -154,7 +160,7 @@ export function RunPage() {
     return () => {
       cancelled = true;
     };
-  }, [symbol, timeframe]);
+  }, [symbol, timeframe, coverageNonce]);
 
   const strategy = useMemo(
     () => strategies?.find((item) => item.id === strategyId) ?? null,
@@ -413,11 +419,12 @@ export function RunPage() {
           {coverageBusy && <Loading label="Reading the cached coverage…" height={24} />}
           {!coverageBusy && coverage && !hasData && (
             <Notice kind="warn" title="No cached data for this combination">
-              Download the history with{" "}
+              Nothing to backtest on yet. Download it from the broker in the
+              panel below, or from a terminal with{" "}
               <code>
                 python -m examples.download_year {symbol} --timeframe {timeframe}
               </code>
-              , then reload the page.
+              .
             </Notice>
           )}
           {!coverageBusy && coverage && hasData && (
@@ -450,6 +457,22 @@ export function RunPage() {
         </div>
       </Panel>
 
+      <Panel
+        title="Broker data"
+        aside={
+          <span style={{ color: "var(--ink-faint)", fontSize: 12 }}>
+            MetaTrader 5 has to be running and logged in
+          </span>
+        }
+      >
+        <DataUpdate
+          symbol={symbol}
+          timeframe={timeframe}
+          coverage={coverage}
+          onFinished={reloadCoverage}
+        />
+      </Panel>
+
       {edgeError !== null && <ErrorNotice error={edgeError} />}
       {edgeBusy && (
         <Panel title="Gate zero">
@@ -460,10 +483,17 @@ export function RunPage() {
 
       {runError !== null && <ErrorNotice error={runError} />}
       {launch && runBusy && (
-        <Notice kind="info" title="Backtest running">
-          {launch.message} — run <span className="mono">{launch.run_id}</span>. The page opens
-          by itself when it finishes.
-        </Notice>
+        <Panel title="Backtest running">
+          <Progress
+            label={`${strategyId} on ${symbol} ${timeframe}`}
+            detail={
+              <>
+                {launch.message} — run <span className="mono">{launch.run_id}</span>. The
+                result page opens by itself when it finishes.
+              </>
+            }
+          />
+        </Panel>
       )}
 
       <RecentRuns runs={recent} onDeleted={refreshRecent} />
@@ -474,6 +504,7 @@ export function RunPage() {
 function EdgePanel({ report }: { report: EdgeReport }) {
   return (
     <Panel
+      className="reveal"
       title="Gate zero — does the signal beat the spread?"
       aside={
         <span style={{ fontSize: 12, color: "var(--ink-soft)" }}>

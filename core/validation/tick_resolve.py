@@ -19,6 +19,7 @@ actually resolved, with that count attached.
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta
 from typing import Any, Literal
@@ -172,6 +173,7 @@ def resolve_ambiguous(
     provider: DataProvider,
     timeframe: Timeframe,
     initial_equity: float,
+    on_progress: Callable[[int, int], None] | None = None,
 ) -> TickResolveReport:
     """Replays every ambiguous trade against the ticks of its exit bar."""
     symbol = spec.instrument.symbol
@@ -220,6 +222,8 @@ def resolve_ambiguous(
     adjusted = trades["net_pnl"].astype("float64").copy()
 
     for position, (row_index, trade) in enumerate(ambiguous.iterrows()):
+        if on_progress is not None:
+            on_progress(position, len(ambiguous))
         stop_level, target_level = levels_for(trade, spec, symbol_spec)
         assert stop_level is not None and target_level is not None
         exit_time = pd.Timestamp(trade["exit_time"]).to_pydatetime()

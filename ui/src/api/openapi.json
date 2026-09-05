@@ -1,9 +1,9 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "backtest-engine",
-    "description": "Local API: cached data, strategies, backtests, saved runs.",
-    "version": "4.2.0"
+    "title": "Falsify",
+    "description": "A backtesting engine that tries to prove your strategy wrong. Local API: cached data, strategies, backtests, saved runs.",
+    "version": "5.0.0"
   },
   "paths": {
     "/api/symbols": {
@@ -76,6 +76,133 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/CoverageOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/data/download": {
+      "post": {
+        "tags": [
+          "data"
+        ],
+        "summary": "Post Download",
+        "description": "Downloads the part of a period the cache does not already hold.",
+        "operationId": "post_download_api_data_download_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DownloadRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DownloadJobOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/data/download/{job_id}": {
+      "get": {
+        "tags": [
+          "data"
+        ],
+        "summary": "Get Download",
+        "operationId": "get_download_api_data_download__job_id__get",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DownloadJobOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/progress/{token}": {
+      "get": {
+        "tags": [
+          "data"
+        ],
+        "summary": "Get Progress",
+        "description": "Where a watched call has got to, polled beside the call itself.",
+        "operationId": "get_progress_api_progress__token__get",
+        "parameters": [
+          {
+            "name": "token",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProgressOut"
                 }
               }
             }
@@ -1567,6 +1694,20 @@
       },
       "BacktestRequest": {
         "properties": {
+          "progress_token": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64,
+                "pattern": "^[A-Za-z0-9_-]+$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Progress Token",
+            "description": "poll GET /api/progress/{token} while this call runs"
+          },
           "strategy_id": {
             "anyOf": [
               {
@@ -1678,6 +1819,20 @@
       },
       "BatchRequest": {
         "properties": {
+          "progress_token": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64,
+                "pattern": "^[A-Za-z0-9_-]+$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Progress Token",
+            "description": "poll GET /api/progress/{token} while this call runs"
+          },
           "strategy_id": {
             "anyOf": [
               {
@@ -3055,6 +3210,193 @@
         ],
         "title": "DeleteResponse"
       },
+      "DownloadHoleOut": {
+        "properties": {
+          "start": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Start"
+          },
+          "end": {
+            "type": "string",
+            "format": "date-time",
+            "title": "End"
+          },
+          "bars": {
+            "type": "integer",
+            "title": "Bars",
+            "default": 0
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "start",
+          "end"
+        ],
+        "title": "DownloadHoleOut",
+        "description": "One gap the job set out to fill, and what came back for it."
+      },
+      "DownloadJobOut": {
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "title": "Job Id"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "running",
+              "done",
+              "error"
+            ],
+            "title": "Status"
+          },
+          "symbol": {
+            "type": "string",
+            "title": "Symbol"
+          },
+          "timeframe": {
+            "type": "string",
+            "title": "Timeframe"
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Started At"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "completed_holes": {
+            "type": "integer",
+            "title": "Completed Holes",
+            "default": 0
+          },
+          "total_holes": {
+            "type": "integer",
+            "title": "Total Holes",
+            "default": 0
+          },
+          "current": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "holes": {
+            "items": {
+              "$ref": "#/components/schemas/DownloadHoleOut"
+            },
+            "type": "array",
+            "title": "Holes"
+          },
+          "bars_before": {
+            "type": "integer",
+            "title": "Bars Before",
+            "default": 0
+          },
+          "bars_after": {
+            "type": "integer",
+            "title": "Bars After",
+            "default": 0
+          },
+          "first_bar": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Bar"
+          },
+          "last_bar": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Bar"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "job_id",
+          "status",
+          "symbol",
+          "timeframe",
+          "started_at"
+        ],
+        "title": "DownloadJobOut",
+        "description": "A download is minutes of network: it is a job, polled, not a wait."
+      },
+      "DownloadRequest": {
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Symbol"
+          },
+          "timeframe": {
+            "type": "string",
+            "title": "Timeframe",
+            "default": "M1"
+          },
+          "start": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Start"
+          },
+          "end": {
+            "type": "string",
+            "format": "date-time",
+            "title": "End"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "symbol",
+          "start",
+          "end"
+        ],
+        "title": "DownloadRequest",
+        "description": "Ask the broker for the part of a period the cache does not hold.\n\nOnly the holes are fetched. Asking for a range that is already cached is\na valid request that downloads nothing and says so, which is the honest\nanswer and also the cheap one."
+      },
       "EdgeRequest": {
         "properties": {
           "strategy_id": {
@@ -4055,6 +4397,11 @@
             "title": "Running",
             "default": false
           },
+          "in_position": {
+            "type": "boolean",
+            "title": "In Position",
+            "default": false
+          },
           "has_lock": {
             "type": "boolean",
             "title": "Has Lock",
@@ -4772,6 +5119,20 @@
       },
       "PermutationRequest": {
         "properties": {
+          "progress_token": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64,
+                "pattern": "^[A-Za-z0-9_-]+$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Progress Token",
+            "description": "poll GET /api/progress/{token} while this call runs"
+          },
           "run_id": {
             "type": "string",
             "minLength": 1,
@@ -5200,6 +5561,86 @@
           "spread_source"
         ],
         "title": "PreviewResponse"
+      },
+      "ProgressOut": {
+        "properties": {
+          "token": {
+            "type": "string",
+            "title": "Token"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "running",
+              "done",
+              "error"
+            ],
+            "title": "Status"
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Started At"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "completed": {
+            "type": "integer",
+            "title": "Completed",
+            "default": 0
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total",
+            "default": 0
+          },
+          "current": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "token",
+          "label",
+          "status",
+          "started_at"
+        ],
+        "title": "ProgressOut",
+        "description": "How far into a job the server is.\n\n`total` of zero means the work has no countable steps, and the client is\nexpected to say that it is running rather than invent a share."
       },
       "QualityOut": {
         "properties": {
@@ -7212,6 +7653,20 @@
       },
       "TickResolveRequest": {
         "properties": {
+          "progress_token": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64,
+                "pattern": "^[A-Za-z0-9_-]+$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Progress Token",
+            "description": "poll GET /api/progress/{token} while this call runs"
+          },
           "run_id": {
             "type": "string",
             "minLength": 1,
@@ -8556,6 +9011,20 @@
       },
       "WalkForwardRequest": {
         "properties": {
+          "progress_token": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64,
+                "pattern": "^[A-Za-z0-9_-]+$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Progress Token",
+            "description": "poll GET /api/progress/{token} while this call runs"
+          },
           "run_id": {
             "type": "string",
             "minLength": 1,

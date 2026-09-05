@@ -62,6 +62,8 @@ export type Tradability = S["TradabilityOut"];
 export type TradabilityCell = S["TradabilityCellOut"];
 
 export type LiveSession = S["LiveSessionOut"];
+export type Progress = S["ProgressOut"];
+export type DownloadJob = S["DownloadJobOut"];
 export type LiveDetail = S["LiveDetailOut"];
 export type LiveEvent = S["LiveEventOut"];
 export type LiveTrade = S["LiveTradeOut"];
@@ -154,6 +156,7 @@ export const api = {
     spec?: unknown;
     config: RunConfigIn;
     force?: boolean;
+    progress_token?: string;
   }) => post<BacktestResponse>("/api/backtest", body),
 
   runs: (params: { symbol?: string; strategy_id?: string; limit?: number } = {}) => {
@@ -180,6 +183,7 @@ export const api = {
   // -- validation --------------------------------------------------------
 
   walkForward: (body: {
+    progress_token?: string;
     run_id: string;
     mode?: "rolling" | "anchored";
     train_days?: number;
@@ -189,6 +193,7 @@ export const api = {
   }) => post<WalkForwardResponse>("/api/validation/walkforward", body),
 
   permutation: (body: {
+    progress_token?: string;
     run_id: string;
     iterations?: number;
     tests?: ("random_entries" | "permuted_returns")[];
@@ -199,7 +204,7 @@ export const api = {
   multipleTesting: (body: { run_id: string }) =>
     post<MultipleTestingResponse>("/api/validation/multiple-testing", body),
 
-  tickResolve: (body: { run_id: string }) =>
+  tickResolve: (body: { run_id: string; progress_token?: string }) =>
     post<TickResolveResponse>("/api/validation/tick-resolve", body),
 
   // -- batch -------------------------------------------------------------
@@ -209,6 +214,7 @@ export const api = {
     symbols: string[];
     config: RunConfigIn;
     max_workers?: number;
+    progress_token?: string;
   }) => post<BatchResponse>("/api/batch", body),
 
   // -- screening ---------------------------------------------------------
@@ -247,4 +253,16 @@ export const api = {
     request<LiveComparison>(
       `/api/live/${encodeURIComponent(sessionId)}/comparison`,
     ),
+
+  // -- how far in a long call is -----------------------------------------
+
+  // Polled beside the request it describes, never instead of it. The token is
+  // the caller's: `watch()` in progress.ts mints one and drives both halves.
+  progress: (token: string) => request<Progress>(`/api/progress/${token}`),
+
+  // -- filling the cache from the broker ---------------------------------
+
+  download: (body: { symbol: string; timeframe: string; start: string; end: string }) =>
+    post<DownloadJob>("/api/data/download", body),
+  downloadJob: (jobId: string) => request<DownloadJob>(`/api/data/download/${jobId}`),
 };

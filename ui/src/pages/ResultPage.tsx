@@ -42,10 +42,11 @@ import {
   utcDate,
   utcDateTime,
 } from "../format";
+import { DRAW_MS, useFirstDraw } from "../motion";
 
 const PAGE_SIZE = 25;
-const EQUITY_COLOR = "#1b4f9c";
-const DRAWDOWN_COLOR = "#a4232a";
+const EQUITY_COLOR = "var(--chart-series)";
+const DRAWDOWN_COLOR = "var(--chart-adverse)";
 
 type ChartPoint = { ts: number; equity: number; drawdown: number };
 
@@ -105,7 +106,9 @@ export function ResultPage({ runId }: { runId: string }) {
     <div className="stack">
       <RunHeader run={run} />
       {run.uncertainty && <UncertaintyPanel band={run.uncertainty} runId={runId} />}
-      {strategy && <EquitySection equity={equity} initial={strategy.initial_equity} />}
+      {strategy && (
+        <EquitySection equity={equity} initial={strategy.initial_equity} runId={runId} />
+      )}
       <div className="row">
         <div className="grow" style={{ flexBasis: 560 }}>
           {strategy && <MetricsTable strategy={strategy} benchmark={benchmark ?? null} />}
@@ -190,6 +193,7 @@ function RunHeader({ run }: { run: RunDetail }) {
   const config = run.config as Record<string, unknown>;
   return (
     <Panel
+      className="reveal"
       title={
         <div>
           <h1>
@@ -623,7 +627,19 @@ function BreakevenPanel({
   );
 }
 
-function EquitySection({ equity, initial }: { equity: Equity | null; initial: number }) {
+function EquitySection({
+  equity,
+  initial,
+  runId,
+}: {
+  equity: Equity | null;
+  initial: number;
+  runId: string;
+}) {
+  // Drawn from the left the first time this run's curve appears, and never
+  // again. A chart that re-animates on every resize or hover is one nobody
+  // can read while they are working.
+  const draw = useFirstDraw(runId);
   const data: ChartPoint[] = useMemo(
     () =>
       (equity?.points ?? []).map((point) => ({
@@ -676,7 +692,7 @@ function EquitySection({ equity, initial }: { equity: Equity | null; initial: nu
       <div className="chart-frame" style={{ height: 260, padding: "8px 8px 0" }}>
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={data} margin={{ top: 8, right: 16, bottom: 0, left: 8 }}>
-            <CartesianGrid stroke="#eceff1" />
+            <CartesianGrid stroke="var(--chart-grid)" />
             <XAxis
               dataKey="ts"
               type="number"
@@ -694,9 +710,9 @@ function EquitySection({ equity, initial }: { equity: Equity | null; initial: nu
             />
             <ReferenceLine
               y={initial}
-              stroke="#5a646e"
+              stroke="var(--chart-axis)"
               strokeDasharray="4 3"
-              label={{ value: "start", position: "insideLeft", fontSize: 11, fill: "#5a646e" }}
+              label={{ value: "start", position: "insideLeft", fontSize: 11, fill: "var(--chart-axis)" }}
             />
             <Tooltip content={<ChartTooltip />} isAnimationActive={false} />
             <Line
@@ -705,7 +721,9 @@ function EquitySection({ equity, initial }: { equity: Equity | null; initial: nu
               stroke={EQUITY_COLOR}
               strokeWidth={1.6}
               dot={false}
-              isAnimationActive={false}
+              isAnimationActive={draw}
+              animationDuration={DRAW_MS}
+              animationEasing="ease-out"
             />
           </LineChart>
         </ResponsiveContainer>
@@ -714,7 +732,7 @@ function EquitySection({ equity, initial }: { equity: Equity | null; initial: nu
       <div className="chart-frame" style={{ height: 130, padding: "0 8px 8px" }}>
         <ResponsiveContainer width="100%" height="100%">
           <AreaChart data={data} margin={{ top: 4, right: 16, bottom: 4, left: 8 }} syncId="run">
-            <CartesianGrid stroke="#eceff1" />
+            <CartesianGrid stroke="var(--chart-grid)" />
             <XAxis
               dataKey="ts"
               type="number"
@@ -738,7 +756,9 @@ function EquitySection({ equity, initial }: { equity: Equity | null; initial: nu
               fill={DRAWDOWN_COLOR}
               fillOpacity={0.14}
               strokeWidth={1.2}
-              isAnimationActive={false}
+              isAnimationActive={draw}
+              animationDuration={DRAW_MS}
+              animationEasing="ease-out"
             />
           </AreaChart>
         </ResponsiveContainer>

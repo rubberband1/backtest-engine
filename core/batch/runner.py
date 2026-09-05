@@ -21,7 +21,7 @@ from __future__ import annotations
 import logging
 import os
 import time
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
@@ -399,6 +399,7 @@ def run_batch(
     runs_dir: str | Path = "runs",
     max_workers: int | None = None,
     consistency_metric: str = "mean_r",
+    on_progress: Callable[[int, int], None] | None = None,
 ) -> BatchReport:
     """Runs the cartesian product of symbols, periods and grid combinations."""
     started = time.perf_counter()
@@ -429,7 +430,11 @@ def run_batch(
         initializer=_init_worker,
         initargs=(str(spec_path), config_payload, str(cache_dir), str(runs_dir)),
     ) as pool:
-        results = list(pool.map(_execute_cell, cells))
+        results = []
+        for done, result in enumerate(pool.map(_execute_cell, cells), start=1):
+            results.append(result)
+            if on_progress is not None:
+                on_progress(done, len(cells))
 
     completed = sum(1 for result in results if result.status == "done")
     failed = len(results) - completed

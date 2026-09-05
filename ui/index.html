@@ -1,9 +1,25 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="light">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>backtest-engine</title>
+    <meta
+      name="description"
+      content="A backtesting engine that tries to prove your strategy wrong."
+    />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>Falsify</title>
+    <script>
+      // The stored theme has to be on <html> before the first paint, or a
+      // reader who chose dark gets a white flash on every load. Inline and
+      // synchronous for that reason; the key matches src/theme.ts.
+      try {
+        var stored = localStorage.getItem("falsify.theme");
+        document.documentElement.dataset.theme = stored === "dark" ? "dark" : "light";
+      } catch (error) {
+        /* site data blocked: the light default in the attribute above stands */
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>

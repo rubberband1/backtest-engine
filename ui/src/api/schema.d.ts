@@ -44,6 +44,63 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/data/download": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Download
+         * @description Downloads the part of a period the cache does not already hold.
+         */
+        post: operations["post_download_api_data_download_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/data/download/{job_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Download */
+        get: operations["get_download_api_data_download__job_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/progress/{token}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Progress
+         * @description Where a watched call has got to, polled beside the call itself.
+         */
+        get: operations["get_progress_api_progress__token__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/strategies": {
         parameters: {
             query?: never;
@@ -641,6 +698,11 @@ export interface components {
         };
         /** BacktestRequest */
         BacktestRequest: {
+            /**
+             * Progress Token
+             * @description poll GET /api/progress/{token} while this call runs
+             */
+            progress_token?: string | null;
             /** Strategy Id */
             strategy_id?: string | null;
             /** Spec */
@@ -679,6 +741,11 @@ export interface components {
         };
         /** BatchRequest */
         BatchRequest: {
+            /**
+             * Progress Token
+             * @description poll GET /api/progress/{token} while this call runs
+             */
+            progress_token?: string | null;
             /** Strategy Id */
             strategy_id?: string | null;
             /** Spec */
@@ -1059,6 +1126,108 @@ export interface components {
             /** Deleted */
             deleted: boolean;
         };
+        /**
+         * DownloadHoleOut
+         * @description One gap the job set out to fill, and what came back for it.
+         */
+        DownloadHoleOut: {
+            /**
+             * Start
+             * Format: date-time
+             */
+            start: string;
+            /**
+             * End
+             * Format: date-time
+             */
+            end: string;
+            /**
+             * Bars
+             * @default 0
+             */
+            bars: number;
+        };
+        /**
+         * DownloadJobOut
+         * @description A download is minutes of network: it is a job, polled, not a wait.
+         */
+        DownloadJobOut: {
+            /** Job Id */
+            job_id: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "running" | "done" | "error";
+            /** Symbol */
+            symbol: string;
+            /** Timeframe */
+            timeframe: string;
+            /**
+             * Started At
+             * Format: date-time
+             */
+            started_at: string;
+            /** Finished At */
+            finished_at?: string | null;
+            /**
+             * Completed Holes
+             * @default 0
+             */
+            completed_holes: number;
+            /**
+             * Total Holes
+             * @default 0
+             */
+            total_holes: number;
+            /** Current */
+            current?: string | null;
+            /** Error */
+            error?: string | null;
+            /** Holes */
+            holes?: components["schemas"]["DownloadHoleOut"][];
+            /**
+             * Bars Before
+             * @default 0
+             */
+            bars_before: number;
+            /**
+             * Bars After
+             * @default 0
+             */
+            bars_after: number;
+            /** First Bar */
+            first_bar?: string | null;
+            /** Last Bar */
+            last_bar?: string | null;
+        };
+        /**
+         * DownloadRequest
+         * @description Ask the broker for the part of a period the cache does not hold.
+         *
+         *     Only the holes are fetched. Asking for a range that is already cached is
+         *     a valid request that downloads nothing and says so, which is the honest
+         *     answer and also the cheap one.
+         */
+        DownloadRequest: {
+            /** Symbol */
+            symbol: string;
+            /**
+             * Timeframe
+             * @default M1
+             */
+            timeframe: string;
+            /**
+             * Start
+             * Format: date-time
+             */
+            start: string;
+            /**
+             * End
+             * Format: date-time
+             */
+            end: string;
+        };
         /** EdgeRequest */
         EdgeRequest: {
             /** Strategy Id */
@@ -1412,6 +1581,11 @@ export interface components {
              */
             running: boolean;
             /**
+             * In Position
+             * @default false
+             */
+            in_position: boolean;
+            /**
              * Has Lock
              * @default false
              */
@@ -1654,6 +1828,11 @@ export interface components {
         };
         /** PermutationRequest */
         PermutationRequest: {
+            /**
+             * Progress Token
+             * @description poll GET /api/progress/{token} while this call runs
+             */
+            progress_token?: string | null;
             /** Run Id */
             run_id: string;
             /**
@@ -1796,6 +1975,45 @@ export interface components {
             verdict: string;
             /** Warnings */
             warnings?: string[];
+        };
+        /**
+         * ProgressOut
+         * @description How far into a job the server is.
+         *
+         *     `total` of zero means the work has no countable steps, and the client is
+         *     expected to say that it is running rather than invent a share.
+         */
+        ProgressOut: {
+            /** Token */
+            token: string;
+            /** Label */
+            label: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "running" | "done" | "error";
+            /**
+             * Started At
+             * Format: date-time
+             */
+            started_at: string;
+            /** Finished At */
+            finished_at?: string | null;
+            /**
+             * Completed
+             * @default 0
+             */
+            completed: number;
+            /**
+             * Total
+             * @default 0
+             */
+            total: number;
+            /** Current */
+            current?: string | null;
+            /** Error */
+            error?: string | null;
         };
         /** QualityOut */
         QualityOut: {
@@ -2433,6 +2651,11 @@ export interface components {
         };
         /** TickResolveRequest */
         TickResolveRequest: {
+            /**
+             * Progress Token
+             * @description poll GET /api/progress/{token} while this call runs
+             */
+            progress_token?: string | null;
             /** Run Id */
             run_id: string;
         };
@@ -2867,6 +3090,11 @@ export interface components {
         };
         /** WalkForwardRequest */
         WalkForwardRequest: {
+            /**
+             * Progress Token
+             * @description poll GET /api/progress/{token} while this call runs
+             */
+            progress_token?: string | null;
             /** Run Id */
             run_id: string;
             /**
@@ -3053,6 +3281,101 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CoverageOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    post_download_api_data_download_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DownloadRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DownloadJobOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_download_api_data_download__job_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DownloadJobOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_progress_api_progress__token__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProgressOut"];
                 };
             };
             /** @description Validation Error */

@@ -9,9 +9,25 @@ project means - so what is shown is the path relative to the project root, and
 """
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+def _project_root() -> Path:
+    """Where "the project" is, from the point of view of a path being named.
+
+    In a checkout that is the repository. In a PyInstaller build it is the
+    directory holding the executable, not the temporary one the bundle is
+    unpacked into: everything a packaged run writes - the runs, the logs, the
+    downloaded bars - lands beside the executable, and naming those "external"
+    left the application unable to say where its own output had gone.
+    """
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
+    return Path(__file__).resolve().parents[1]
+
+
+PROJECT_ROOT = _project_root()
 
 
 def project_relative(path: Path | str) -> str:

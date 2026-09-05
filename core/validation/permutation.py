@@ -28,7 +28,7 @@ from __future__ import annotations
 import logging
 import os
 import time
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import asdict, dataclass, field
 from datetime import tzinfo
@@ -340,6 +340,7 @@ def permutation_test(
     block_bars: int = DEFAULT_BLOCK_BARS,
     seed: int = 12345,
     max_workers: int | None = None,
+    on_progress: Callable[[int, int], None] | None = None,
 ) -> PermutationTestReport:
     """Runs one of the two null models and scores the real result against it."""
     if iterations < 1:
@@ -374,7 +375,16 @@ def permutation_test(
     with ProcessPoolExecutor(
         max_workers=workers, initializer=_init_worker, initargs=init_args
     ) as pool:
-        draws = list(pool.map(_iteration, seeds, chunksize=max(1, iterations // 64)))
+        draws = []
+        # consumed one at a time rather than with `list(...)` so the caller
+        # can be told which iteration it is on. `pool.map` yields in the
+        # order of `seeds`, so the draws are identical either way.
+        for done, draw in enumerate(
+            pool.map(_iteration, seeds, chunksize=max(1, iterations // 64)), start=1
+        ):
+            draws.append(draw)
+            if on_progress is not None:
+                on_progress(done, iterations)
 
     elapsed = time.perf_counter() - started
     null_trades = np.array([draw["trades"] for draw in draws], dtype="float64")

@@ -22,12 +22,15 @@ import {
   type TickResolveResponse,
   type WalkForwardResponse,
 } from "../api/client";
+import { Progress } from "../components/Progress";
+import { DRAW_MS, useFirstDraw } from "../motion";
 import { Badge, Empty, ErrorNotice, Field, Loading, Notice, Panel, Signed } from "../components/ui";
+import { useWatched } from "../progress";
 import { int, money, num, pct, signedMoney, utcDate, utcDateTime } from "../format";
 
-const OOS_COLOR = "#1b4f9c";
-const NULL_COLOR = "#9aa4ae";
-const OBSERVED_COLOR = "#a4232a";
+const OOS_COLOR = "var(--chart-series)";
+const NULL_COLOR = "var(--chart-null)";
+const OBSERVED_COLOR = "var(--chart-adverse)";
 
 /**
  * Everything on this page exists to make a backtest harder to believe, not
@@ -118,6 +121,7 @@ function WalkForwardSection({ runId }: { runId: string }) {
   const [report, setReport] = useState<WalkForwardResponse | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
+  const watched = useWatched();
 
   async function run() {
     setBusy(true);
@@ -129,14 +133,17 @@ function WalkForwardSection({ runId }: { runId: string }) {
         grid = JSON.parse(gridText) as Record<string, unknown[]>;
       }
       setReport(
-        await api.walkForward({
-          run_id: runId,
-          mode,
-          train_days: trainDays,
-          test_days: testDays,
-          min_train_trades: minTrades,
-          grid: grid as never,
-        }),
+        await watched.watch((progress_token) =>
+          api.walkForward({
+            progress_token,
+            run_id: runId,
+            mode,
+            train_days: trainDays,
+            test_days: testDays,
+            min_train_trades: minTrades,
+            grid: grid as never,
+          }),
+        ),
       );
     } catch (problem) {
       setError(
@@ -157,6 +164,8 @@ function WalkForwardSection({ runId }: { runId: string }) {
       })),
     [report],
   );
+  // one draw per report, so re-running the analysis draws the new curve
+  const draw = useFirstDraw(report ? `${runId}:${report.windows?.length ?? 0}` : null);
 
   return (
     <Panel
@@ -232,7 +241,18 @@ function WalkForwardSection({ runId }: { runId: string }) {
         </div>
 
         {error !== null && <ErrorNotice error={error} />}
-        {busy && <Loading label="Optimizing each in-sample leg…" height={200} />}
+        {busy && (
+          <Progress
+            label="Optimizing each in-sample leg, applying the winner to the next"
+            detail={
+              watched.progress?.total
+                ? `window ${watched.progress.completed + 1} of ${watched.progress.total}`
+                : "building the windows"
+            }
+            completed={watched.progress?.completed}
+            total={watched.progress?.total}
+          />
+        )}
 
         {report && (
           <>
@@ -282,7 +302,7 @@ function WalkForwardSection({ runId }: { runId: string }) {
                 <div className="chart-frame" style={{ height: 220 }}>
                   <ResponsiveContainer width="100%" height="100%">
                     <AreaChart data={curve} margin={{ top: 8, right: 16, bottom: 0, left: 8 }}>
-                      <CartesianGrid stroke="#eceff1" />
+                      <CartesianGrid stroke="var(--chart-grid)" />
                       <XAxis
                         dataKey="ts"
                         type="number"
@@ -302,7 +322,7 @@ function WalkForwardSection({ runId }: { runId: string }) {
                       />
                       <ReferenceLine
                         y={report.oos_metrics?.initial_equity ?? 100}
-                        stroke="#5a646e"
+                        stroke="var(--chart-axis)"
                         strokeDasharray="4 3"
                       />
                       <Tooltip
@@ -333,7 +353,9 @@ function WalkForwardSection({ runId }: { runId: string }) {
                         fill={OOS_COLOR}
                         fillOpacity={0.1}
                         strokeWidth={1.6}
-                        isAnimationActive={false}
+                        isAnimationActive={draw}
+                        animationDuration={DRAW_MS}
+                        animationEasing="ease-out"
                       />
                     </AreaChart>
                   </ResponsiveContainer>
@@ -565,13 +587,18 @@ function PermutationSection({ runId }: { runId: string }) {
   const [report, setReport] = useState<PermutationResponse | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
+  const watched = useWatched();
 
   async function run() {
     setBusy(true);
     setError(null);
     setReport(null);
     try {
-      setReport(await api.permutation({ run_id: runId, iterations }));
+      setReport(
+        await watched.watch((progress_token) =>
+          api.permutation({ progress_token, run_id: runId, iterations }),
+        ),
+      );
     } catch (problem) {
       setError(problem);
     } finally {
@@ -613,9 +640,15 @@ function PermutationSection({ runId }: { runId: string }) {
 
         {error !== null && <ErrorNotice error={error} />}
         {busy && (
-          <Loading
-            label={`Simulating ${int(iterations)} draws per null model. This runs the full engine every time.`}
-            height={220}
+          <Progress
+            label="Drawing from the null models"
+            detail={
+              watched.progress?.current
+                ? `${watched.progress.current} · the full engine runs on every draw`
+                : `${int(iterations)} draws per null model, the full engine on each`
+            }
+            completed={watched.progress?.completed}
+            total={watched.progress?.total}
           />
         )}
 
@@ -693,7 +726,7 @@ function PermutationBlock({ test }: { test: PermutationTest }) {
           <div className="chart-frame" style={{ height: 180 }}>
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={bars} margin={{ top: 8, right: 16, bottom: 4, left: 8 }}>
-                <CartesianGrid stroke="#eceff1" vertical={false} />
+                <CartesianGrid stroke="var(--chart-grid)" vertical={false} />
                 <XAxis
                   dataKey="centre"
                   type="number"
@@ -980,13 +1013,18 @@ function TickResolveSection({ runId }: { runId: string }) {
   const [report, setReport] = useState<TickResolveResponse | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
+  const watched = useWatched();
 
   async function run() {
     setBusy(true);
     setError(null);
     setReport(null);
     try {
-      setReport(await api.tickResolve({ run_id: runId }));
+      setReport(
+        await watched.watch((progress_token) =>
+          api.tickResolve({ progress_token, run_id: runId }),
+        ),
+      );
     } catch (problem) {
       setError(problem);
     } finally {
@@ -1015,7 +1053,18 @@ function TickResolveSection({ runId }: { runId: string }) {
         </div>
 
         {error !== null && <ErrorNotice error={error} />}
-        {busy && <Loading label="Downloading the ticks of each ambiguous bar…" height={140} />}
+        {busy && (
+          <Progress
+            label="Reading the ticks of each ambiguous bar"
+            detail={
+              watched.progress?.total
+                ? `trade ${watched.progress.completed + 1} of ${watched.progress.total}`
+                : "asking the terminal for tick history"
+            }
+            completed={watched.progress?.completed}
+            total={watched.progress?.total}
+          />
+        )}
 
         {report && (
           <>

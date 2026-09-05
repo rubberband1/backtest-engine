@@ -11,6 +11,7 @@ import {
   type Tradability,
   type TradabilityCell,
 } from "../api/client";
+import { Progress } from "../components/Progress";
 import { Badge, Empty, ErrorNotice, Field, Loading, Notice, Panel, Signed } from "../components/ui";
 import { int, num, pct, signedMoney } from "../format";
 import { navigate } from "../router";
@@ -329,12 +330,16 @@ export function ScreenPage({ jobId }: { jobId: string | null }) {
       {running && (
         <Panel title="Campaign running">
           <div className="stack">
-            <progress value={job.completed_cells} max={job.total_cells || 1} style={{ width: "100%" }} />
-            <div style={{ color: "var(--ink-soft)", fontSize: 13 }}>
-              {int(job.completed_cells)} of {int(job.total_cells)} cells ·{" "}
-              {job.current ?? "starting"}
-            </div>
-            <Loading label="Gate zero on every cell, backtests on the survivors, permutations last." height={80} />
+            <Progress
+              label="screening cell"
+              detail={
+                job.current
+                  ? `${job.current} · gate zero first, a backtest on the survivors, permutations last`
+                  : "gate zero on every cell, backtests on the survivors, permutations last"
+              }
+              completed={job.completed_cells}
+              total={job.total_cells}
+            />
           </div>
         </Panel>
       )}
@@ -517,6 +522,7 @@ function TrialPanel({ report }: { report: ScreenReport }) {
   const panel = report.panel;
   return (
     <Panel
+      className="reveal"
       title="Multiple testing over the whole campaign"
       aside={
         panel.best_clears_required === true ? (

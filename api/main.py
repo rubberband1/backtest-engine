@@ -30,9 +30,11 @@ import pandas as pd
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from scipy import stats
 from starlette.requests import Request
 
+from api import progress
 from api import schemas as s
 from api.downsample import downsample
 from core.batch.runner import Period as BatchPeriod
@@ -48,6 +50,7 @@ from core.live.compare import compare as live_compare
 from core.live.journal import Journal
 from core.live.lock import RunLock, process_alive
 from core.paths import project_relative
+from core.product import PRODUCT_NAME, TAGLINE
 from core.research.screen import run_screen
 from core.research.tradability import DEFAULT_MAX_SPREAD_ATR
 from core.research.tradability import build_table as build_tradability
@@ -84,6 +87,11 @@ from core.validation.walkforward import (
 from core.version import ENGINE_VERSION
 
 logger = logging.getLogger(__name__)
+
+# The repository root, from this file rather than from the working directory:
+# the packaged desktop build starts wherever the shortcut points, and the
+# built dashboard has to be found either way.
+ROOT = Path(__file__).resolve().parent.parent
 
 # Beyond this the request stops waiting: the run_id is returned and the
 # frontend polls.
@@ -137,9 +145,9 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="backtest-engine",
+    title=PRODUCT_NAME,
     version=ENGINE_VERSION,
-    description="Local API: cached data, strategies, backtests, saved runs.",
+    description=f"{TAGLINE} Local API: cached data, strategies, backtests, saved runs.",
     lifespan=lifespan,
 )
 
@@ -326,6 +334,152 @@ def get_coverage(
             float(reference.median_points) if reference is not None else None
         ),
     )
+
+
+# -- getting the data ----------------------------------------------------
+
+# A download is minutes of network, so it is a job like a campaign is. Kept in
+# memory for the same reason: what it produces is written into the cache, and
+# the cache is the artefact worth keeping.
+_downloads: dict[str, dict[str, Any]] = {}
+DOWNLOAD_HISTORY = 10
+
+
+def _cached_bar_count(symbol: str, tf: Timeframe) -> tuple[int, datetime | None, datetime | None]:
+    if not cached_years(cache, symbol, tf):
+        return 0, None, None
+    bars = load_bars(cache, symbol, tf)
+    if not len(bars):
+        return 0, None, None
+    return len(bars), bars.index[0].to_pydatetime(), bars.index[-1].to_pydatetime()
+
+
+def _run_download(job_id: str, request: s.DownloadRequest) -> None:
+    """Fills the holes in one (symbol, timeframe) period, hole by hole.
+
+    The cache decides what is missing; this only walks the list it returns, so
+    a range already held downloads nothing. Nothing here writes bars itself -
+    `get_or_fetch` does, and it is what records which source filled each
+    interval.
+    """
+    job = _downloads[job_id]
+    tf = _timeframe(request.timeframe)
+    try:
+        from core.data.mt5_provider import MT5Provider
+
+        job["bars_before"] = _cached_bar_count(request.symbol, tf)[0]
+        holes = cache.missing_ranges(request.symbol, tf, request.start, request.end)
+        job["total_holes"] = len(holes)
+        if not holes:
+            job["current"] = "nothing missing: the cache already covers this period"
+
+        with MT5Provider() as provider:
+            for index, (hole_start, hole_end) in enumerate(holes):
+                job["current"] = (
+                    f"{hole_start:%Y-%m-%d} to {hole_end:%Y-%m-%d}"
+                )
+                bars = cache.get_or_fetch(
+                    request.symbol,
+                    tf,
+                    hole_start,
+                    hole_end,
+                    provider.get_bars,
+                    server_timezone=provider.server_timezone,
+                    source=provider.source_name,
+                )
+                job["holes"].append(
+                    {"start": hole_start, "end": hole_end, "bars": int(len(bars))}
+                )
+                job["completed_holes"] = index + 1
+
+        total, first, last = _cached_bar_count(request.symbol, tf)
+        job["bars_after"] = total
+        job["first_bar"] = first
+        job["last_bar"] = last
+        job["current"] = None
+        job["status"] = "done"
+    except Exception as exc:  # a failed download is a status, not a 500
+        logger.exception("download job %s failed", job_id)
+        job["status"] = "error"
+        job["error"] = f"{type(exc).__name__}: {exc}"
+    finally:
+        job["finished_at"] = datetime.now(timezone.utc)
+
+
+@app.post("/api/data/download", response_model=s.DownloadJobOut, tags=["data"])
+def post_download(request: s.DownloadRequest) -> s.DownloadJobOut:
+    """Downloads the part of a period the cache does not already hold."""
+    if IS_FIXTURE:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "this backend is serving the synthetic fixture, which is a "
+                "fixed artefact rather than a cache to fill. Restart it "
+                "against a real data directory to download bars"
+            ),
+        )
+    if request.end <= request.start:
+        raise HTTPException(status_code=422, detail="the period ends before it starts")
+
+    tf = _timeframe(request.timeframe)
+    job_id = f"download-{int(time.time() * 1000):x}"
+    _downloads[job_id] = {
+        "job_id": job_id,
+        "status": "running",
+        "symbol": request.symbol,
+        "timeframe": tf.name,
+        "started_at": datetime.now(timezone.utc),
+        "finished_at": None,
+        "completed_holes": 0,
+        "total_holes": 0,
+        "current": "asking the terminal what it has",
+        "error": None,
+        "holes": [],
+        "bars_before": 0,
+        "bars_after": 0,
+        "first_bar": None,
+        "last_bar": None,
+    }
+    for stale in list(_downloads)[:-DOWNLOAD_HISTORY]:
+        _downloads.pop(stale, None)
+
+    assert _executor is not None
+    _executor.submit(_run_download, job_id, request)
+    return s.DownloadJobOut(**_downloads[job_id])
+
+
+@app.get("/api/data/download/{job_id}", response_model=s.DownloadJobOut, tags=["data"])
+def get_download(job_id: str) -> s.DownloadJobOut:
+    job = _downloads.get(job_id)
+    if job is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"no download job {job_id}: the last {DOWNLOAD_HISTORY} are kept "
+            f"in memory until the backend restarts",
+        )
+    return s.DownloadJobOut(**job)
+
+
+# -- how far in a long call is -------------------------------------------
+
+
+@app.get("/api/progress/{token}", response_model=s.ProgressOut, tags=["data"])
+def get_progress(token: str) -> s.ProgressOut:
+    """Where a watched call has got to, polled beside the call itself."""
+    try:
+        job = progress.read(token)
+    except progress.InvalidToken as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if job is None:
+        # Not an error: a client polls as soon as it sends the request, and
+        # can win the race against the worker thread that registers the job.
+        return s.ProgressOut(
+            token=token,
+            label="",
+            status="running",
+            started_at=datetime.now(timezone.utc),
+        )
+    return s.ProgressOut(**asdict(job))
 
 
 # -- strategies ----------------------------------------------------------
@@ -717,6 +871,8 @@ def post_backtest(request: s.BacktestRequest) -> s.BacktestResponse:
     )
 
     assert _executor is not None
+    if request.progress_token:
+        progress.start(request.progress_token, f"backtest · {run_config.symbol}")
     future = _executor.submit(
         execute_run, store, bound, run_config, bars, symbol_spec, server_tz, run_id
     )
@@ -1199,22 +1355,24 @@ def post_walkforward(request: s.WalkForwardRequest) -> s.WalkForwardResponse:
 
     started = time.perf_counter()
     try:
-        report = walk_forward(
-            record.spec,
-            bars,
-            symbol_spec,
-            server_tz,
-            _backtest_config(record),
-            WalkForwardConfig(
-                mode=request.mode,
-                train_days=request.train_days,
-                test_days=request.test_days,
-                min_train_trades=request.min_train_trades,
-                objective=request.objective,
-            ),
-            grid=request.grid,
-            reference_trades=record.trades(),
-        )
+        with progress.watching(request.progress_token, "walk-forward"):
+            report = walk_forward(
+                record.spec,
+                bars,
+                symbol_spec,
+                server_tz,
+                _backtest_config(record),
+                WalkForwardConfig(
+                    mode=request.mode,
+                    train_days=request.train_days,
+                    test_days=request.test_days,
+                    min_train_trades=request.min_train_trades,
+                    objective=request.objective,
+                ),
+                grid=request.grid,
+                reference_trades=record.trades(),
+                on_progress=progress.reporter(request.progress_token),
+            )
     except WalkForwardError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     logger.info("walk-forward %s in %.1fs", request.run_id, time.perf_counter() - started)
@@ -1252,19 +1410,33 @@ def post_permutation(request: s.PermutationRequest) -> s.PermutationResponse:
     config = _backtest_config(record)
 
     tests: list[s.PermutationTestOut] = []
-    for kind in request.tests:
-        report = permutation_test(
-            kind,
-            record.spec,
-            bars,
-            symbol_spec,
-            server_tz,
-            config,
-            iterations=request.iterations,
-            block_bars=request.block_bars,
-            seed=request.seed,
-        )
-        tests.append(s.PermutationTestOut(**report.as_dict()))
+    # Two nulls in sequence, each of `iterations` draws. The counter runs over
+    # the pair rather than restarting halfway, and the label says which null
+    # is being drawn - otherwise the bar reaches the end and starts again,
+    # which reads as a stall.
+    watch = progress.watching(
+        request.progress_token, "permutation", request.iterations * len(request.tests)
+    )
+    with watch:
+        for position, kind in enumerate(request.tests):
+            done_before = position * request.iterations
+
+            def step(done: int, total: int, offset: int = done_before, name: str = kind) -> None:
+                watch.step(offset + done, current=name.replace("_", " "))
+
+            report = permutation_test(
+                kind,
+                record.spec,
+                bars,
+                symbol_spec,
+                server_tz,
+                config,
+                iterations=request.iterations,
+                block_bars=request.block_bars,
+                seed=request.seed,
+                on_progress=step if request.progress_token else None,
+            )
+            tests.append(s.PermutationTestOut(**report.as_dict()))
 
     return s.PermutationResponse(
         run_id=request.run_id, symbol=record.config.symbol, tests=tests
@@ -1410,8 +1582,12 @@ def post_tick_resolve(request: s.TickResolveRequest) -> s.TickResolveResponse:
     try:
         from core.data.mt5_provider import MT5Provider
 
-        with MT5Provider(server_timezone=resolver.server_timezone()) as provider:
+        with (
+            progress.watching(request.progress_token, "tick resolve"),
+            MT5Provider(server_timezone=resolver.server_timezone()) as provider,
+        ):
             report = resolve_ambiguous(
+                on_progress=progress.reporter(request.progress_token),
                 run_id=request.run_id,
                 spec=record.spec,
                 trades=record.trades(),
@@ -1471,21 +1647,23 @@ def post_batch(request: s.BatchRequest) -> s.BatchResponse:
         spec_path = temporary
 
     try:
-        report = run_batch(
-            spec_path=spec_path,
-            symbols=request.symbols,
-            base_config=base_config,
-            periods=[
-                BatchPeriod(start=period.start, end=period.end)
-                for period in request.periods
-            ]
-            or None,
-            grid=request.grid,
-            cache_dir=CACHE_DIR,
-            runs_dir=RUNS_DIR,
-            max_workers=request.max_workers,
-            consistency_metric=request.consistency_metric,
-        )
+        with progress.watching(request.progress_token, "batch"):
+            report = run_batch(
+                spec_path=spec_path,
+                symbols=request.symbols,
+                base_config=base_config,
+                periods=[
+                    BatchPeriod(start=period.start, end=period.end)
+                    for period in request.periods
+                ]
+                or None,
+                grid=request.grid,
+                cache_dir=CACHE_DIR,
+                runs_dir=RUNS_DIR,
+                max_workers=request.max_workers,
+                consistency_metric=request.consistency_metric,
+                on_progress=progress.reporter(request.progress_token),
+            )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     finally:
@@ -1752,6 +1930,7 @@ def _live_session(path: Path) -> s.LiveSessionOut:
     first_bar = last_bar = last_event = None
     bars = trades = errors = 0
     stopped = False
+    holding = False
 
     for event in journal.events():
         symbol = event.symbol or symbol
@@ -1766,6 +1945,15 @@ def _live_session(path: Path) -> s.LiveSessionOut:
             last_bar = event.bar_time
         elif event.kind == "position_closed":
             trades += 1
+            holding = False
+        # The runner writes an order only when it is opening: a close is
+        # recorded as `position_closed` with its result attached, never as a
+        # second `order_result`. A reconnect that adopts an open position
+        # writes `reconciled` instead, and that is a holding too.
+        elif event.kind == "order_result":
+            holding = holding or bool((event.detail.get("result") or {}).get("accepted"))
+        elif event.kind == "reconciled":
+            holding = True
         elif event.kind == "error":
             errors += 1
         elif event.kind == "stopped":
@@ -1791,6 +1979,7 @@ def _live_session(path: Path) -> s.LiveSessionOut:
         last_event_at=last_event,
         stopped=stopped,
         running=bool(info and process_alive(info.pid)),
+        in_position=holding and not stopped,
         pid=info.pid if info else None,
     )
 
@@ -1808,3 +1997,61 @@ def health() -> dict[str, Any]:
         "live_dir": project_relative(LIVE_DIR),
         "runs": len(store.list_runs(limit=500)),
     }
+
+
+# -- the built frontend --------------------------------------------------
+
+# Mounted last, and only when it exists. In development `run.py` starts Vite
+# and the dashboard is served from there; in the packaged desktop build there
+# is no Node at all, so the same FastAPI process serves the compiled files.
+# The mount is at "/" and therefore has to be registered after every /api
+# route, or it would swallow them.
+UI_DIST = Path(os.environ.get("BACKTEST_UI_DIST", ROOT / "ui" / "dist"))
+
+
+def ui_is_built() -> bool:
+    """An index.html, and every asset it actually references.
+
+    Checking only for index.html was not enough. A packaged build assembled
+    while the frontend was being rebuilt shipped an index.html naming a
+    bundle that had already been renamed, and the result was a window that
+    opened on a blank page with nothing anywhere saying why. The assets are
+    part of the answer to "is it built", so they are part of the question.
+    """
+    index = UI_DIST / "index.html"
+    if not index.is_file():
+        return False
+    referenced = re.findall(
+        r'(?:src|href)="(/assets/[^"]+)"', index.read_text(encoding="utf-8")
+    )
+    missing = [name for name in referenced if not (UI_DIST / name.lstrip("/")).is_file()]
+    if missing:
+        logger.error(
+            "the built dashboard in %s is incomplete: index.html references %s, "
+            "which %s not there. Rebuild it with `npm run build` in ui/",
+            project_relative(UI_DIST),
+            ", ".join(missing),
+            "is" if len(missing) == 1 else "are",
+        )
+        return False
+    return True
+
+
+if ui_is_built():
+    app.mount("/", StaticFiles(directory=UI_DIST, html=True), name="ui")
+    logger.info("serving the built dashboard from %s", project_relative(UI_DIST))
+else:
+    @app.get("/", include_in_schema=False)
+    def _no_ui() -> JSONResponse:
+        """Says how to get a dashboard rather than returning a bare 404."""
+        return JSONResponse(
+            status_code=503,
+            content={
+                "detail": (
+                    f"the dashboard is not built. Run `npm run build` in ui/, or "
+                    f"start the development server with `python run.py`. The API "
+                    f"itself is up: see /docs. Looked in "
+                    f"{project_relative(UI_DIST)}"
+                )
+            },
+        )

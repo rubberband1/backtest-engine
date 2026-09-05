@@ -1,26 +1,126 @@
-/* Minimal visual system: one palette, one type scale, an 8px grid.
-   A working tool, not a showcase: high density, high contrast, no
-   decoration. Colour never carries meaning on its own - there is always a
-   sign or a label next to it. */
+/* The visual system, defined once. Nothing below this block writes a colour,
+   a spacing or a duration literally: every component reads a token.
+
+   Light is the default and dark is a choice the reader makes and keeps. The
+   OS preference is deliberately not consulted - a light instrument on a lit
+   desk is what this is for, and the dark theme exists for a second, narrower
+   purpose: recording the screen, where it has to stay legible at large type
+   in a vertical frame.
+
+   Colour means something or it is not used. Green passed, amber needs
+   attention, red refused, and everything else is ink on paper. There is no
+   brand colour, so the primary action is ink itself - which is what keeps a
+   screenful of numbers from competing with the three colours that are
+   actually carrying a verdict.
+
+   Never colour alone: a sign, a word or an icon always says what the colour
+   says. */
+
+/* Both faces are variable and served from this directory. Nothing is fetched
+   at runtime - the application has to work with no network at all, which is
+   also the only way the packaged desktop build can be honest about being
+   local. The latin-ext slice is a separate file, so a session that never
+   renders one of its characters never pays for it. */
+@font-face {
+  font-family: "Inter var";
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url("./fonts/inter-latin.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191,
+    U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: "Inter var";
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url("./fonts/inter-latin-ext.woff2") format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7,
+    U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F,
+    U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F,
+    U+A720-A7FF;
+}
+
+@font-face {
+  font-family: "JetBrains Mono var";
+  font-style: normal;
+  font-weight: 400 600;
+  font-display: swap;
+  src: url("./fonts/jetbrains-mono-latin.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191,
+    U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: "JetBrains Mono var";
+  font-style: normal;
+  font-weight: 400 600;
+  font-display: swap;
+  src: url("./fonts/jetbrains-mono-latin-ext.woff2") format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7,
+    U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F,
+    U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F,
+    U+A720-A7FF;
+}
 
 :root {
-  --bg: #ffffff;
-  --bg-soft: #f6f7f8;
-  --bg-sunken: #eef0f2;
-  --line: #d5d9de;
-  --line-strong: #b4bbc3;
-  --ink: #14181d;
-  --ink-soft: #5a646e;
-  --ink-faint: #69737d;
+  color-scheme: light;
 
-  --pos: #146c43;
-  --pos-soft: #e6f4ec;
-  --neg: #a4232a;
-  --neg-soft: #fdecec;
-  --warn: #8a5a00;
-  --warn-soft: #fdf3e0;
-  --accent: #1b4f9c;
-  --accent-soft: #e8f0fb;
+  /* Neutrals carry a trace of the hue the mark is drawn in: chroma small
+     enough that nobody reads them as tinted, large enough that a screenful
+     of them is not a dead greyscale. */
+  --bg: oklch(99.2% 0.002 258);
+  --bg-soft: oklch(97.4% 0.003 258);
+  --bg-sunken: oklch(94.6% 0.004 258);
+  --line: oklch(89% 0.006 258);
+  --line-strong: oklch(62% 0.014 258);
+  --ink: oklch(21% 0.016 258);
+  --ink-soft: oklch(44% 0.014 258);
+  --ink-faint: oklch(49% 0.012 258);
+
+  /* Lightness carries as much of the difference as hue does. Set at the
+     same tone - which is where they naturally land - green and red are one
+     colour to a reader who cannot separate the two, and identical in a
+     greyscale screenshot. tests/test_contrast.py holds them apart. */
+  --pos: oklch(41% 0.12 152);
+  --pos-soft: oklch(96% 0.026 152);
+  --neg: oklch(50% 0.175 27);
+  --neg-soft: oklch(96% 0.028 27);
+  --warn: oklch(53% 0.115 72);
+  --warn-soft: oklch(96% 0.045 85);
+
+  /* Not a brand colour: the primary action is ink. That is what leaves the
+     three semantic colours as the only coloured things on a page. */
+  --accent: oklch(24% 0.02 258);
+  --accent-soft: oklch(93.5% 0.008 258);
+  --on-accent: oklch(98.5% 0.002 258);
+
+  /* Charts. The primary series is ink, the grid is the panel's own rule, and
+     red is reserved for the quantity that is adverse by definition - a
+     drawdown is never good news. The null distribution is deliberately the
+     mutest thing on its chart: the eye should go to the observed value. */
+  --chart-grid: oklch(92% 0.005 258);
+  --chart-axis: oklch(44% 0.014 258);
+  --chart-series: oklch(28% 0.018 258);
+  --chart-adverse: oklch(50% 0.175 27);
+  --chart-null: oklch(74% 0.011 258);
+
+  /* Categorical, and the one place colour is spent on identity rather than
+     on meaning: six equity curves overlaid need six distinguishable strokes,
+     and the alternative is six greys nobody can tell apart. Lightness moves
+     with hue, so the series stay separable in greyscale and to a reader who
+     cannot distinguish red from green - and the chart carries a labelled
+     legend besides, so the colour is never the only key. */
+  --series-1: oklch(30% 0.02 258);
+  --series-2: oklch(52% 0.17 28);
+  --series-3: oklch(46% 0.13 152);
+  --series-4: oklch(58% 0.11 72);
+  --series-5: oklch(44% 0.17 300);
+  --series-6: oklch(52% 0.1 215);
 
   --space-1: 4px;
   --space-2: 8px;
@@ -29,8 +129,65 @@
   --space-5: 32px;
 
   --radius: 4px;
-  --mono: ui-monospace, "SFMono-Regular", "Cascadia Mono", Consolas, monospace;
-  --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --shadow: 0 1px 2px oklch(21% 0.016 258 / 8%),
+    0 4px 12px oklch(21% 0.016 258 / 8%);
+
+  --mono: "JetBrains Mono var", ui-monospace, "Cascadia Mono", Consolas, monospace;
+  --sans: "Inter var", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+
+  /* Motion is three durations and one curve. Anything needing a fourth is
+     decoration and does not belong here. The draw is the single longer one
+     the interface is allowed, and only for a curve arriving from the left. */
+  --dur-fast: 120ms;
+  --dur: 180ms;
+  --dur-slow: 240ms;
+  --dur-draw: 500ms;
+  --ease-out: cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+/* The reader's choice, kept in localStorage and written onto <html> before
+   the first paint. Only the semantic layer moves; spacing, radii and
+   durations are the same in both. Dark is not the light theme inverted:
+   depth comes from lighter surfaces rather than from shadow, the greens and
+   reds are lifted and desaturated to survive on a dark ground, and body text
+   drops a weight step because light on dark reads heavier. */
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  --bg: oklch(21.5% 0.012 258);
+  --bg-soft: oklch(17.5% 0.011 258);
+  --bg-sunken: oklch(26% 0.013 258);
+  --line: oklch(32% 0.014 258);
+  --line-strong: oklch(56% 0.018 258);
+  --ink: oklch(95% 0.004 258);
+  --ink-soft: oklch(78% 0.011 258);
+  --ink-faint: oklch(71% 0.012 258);
+
+  --pos: oklch(84% 0.15 152);
+  --pos-soft: oklch(29% 0.045 152);
+  --neg: oklch(70% 0.145 25);
+  --neg-soft: oklch(30% 0.06 25);
+  --warn: oklch(78% 0.13 82);
+  --warn-soft: oklch(30% 0.05 82);
+
+  --accent: oklch(93% 0.006 258);
+  --accent-soft: oklch(28% 0.014 258);
+  --on-accent: oklch(19% 0.012 258);
+
+  --chart-grid: oklch(29% 0.012 258);
+  --chart-axis: oklch(72% 0.011 258);
+  --chart-series: oklch(92% 0.006 258);
+  --chart-adverse: oklch(70% 0.145 25);
+  --chart-null: oklch(45% 0.014 258);
+
+  --series-1: oklch(90% 0.008 258);
+  --series-2: oklch(74% 0.145 28);
+  --series-3: oklch(79% 0.145 152);
+  --series-4: oklch(82% 0.13 78);
+  --series-5: oklch(74% 0.145 300);
+  --series-6: oklch(78% 0.1 215);
+
+  --shadow: 0 1px 2px oklch(0% 0 0 / 40%), 0 4px 12px oklch(0% 0 0 / 30%);
 }
 
 * {
@@ -50,10 +207,19 @@ body {
   font-family: var(--sans);
   font-size: 14px;
   line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
 }
 
-/* Every digit that changes or lines up in a column uses tabular figures:
-   without them the numbers dance from row to row. */
+/* Light text on a dark ground reads heavier than the reverse at the same
+   weight. One step down keeps the two themes at the same apparent weight
+   instead of making the dark one look semibold. */
+[data-theme="dark"] body {
+  font-weight: 350;
+}
+
+/* Every digit that changes or lines up in a column is set in the monospace
+   face with tabular figures. Without both, the numbers dance from row to row
+   and a column stops being scannable. */
 table,
 .num,
 input,
@@ -62,8 +228,15 @@ select,
   font-variant-numeric: tabular-nums;
 }
 
-.mono {
+.mono,
+td.num,
+.kpi .value,
+.pair .value,
+.facts dd,
+.tooltip dd,
+.progress-count {
   font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
 }
 
 h1,
@@ -87,8 +260,17 @@ h3 {
   color: var(--ink-soft);
 }
 
+/* No brand colour means no blue link: the underline marks the link, in both
+   themes and for a reader who cannot see hue at all. */
 a {
-  color: var(--accent);
+  color: var(--ink);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+
+a:hover {
+  text-decoration-thickness: 2px;
 }
 
 :focus-visible {
@@ -145,9 +327,9 @@ a {
 }
 
 .nav a[aria-current="page"] {
-  background: var(--accent-soft);
+  background: var(--accent);
   border-color: var(--accent);
-  color: var(--accent);
+  color: var(--on-accent);
   font-weight: 600;
 }
 
@@ -274,11 +456,12 @@ button:hover:not(:disabled) {
 button.primary {
   background: var(--accent);
   border-color: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
 }
 
 button.primary:hover:not(:disabled) {
-  filter: brightness(1.1);
+  background: var(--ink);
+  border-color: var(--ink);
 }
 
 button:disabled {
@@ -346,7 +529,7 @@ tr.flagged {
 }
 
 tr.flagged:hover {
-  background: #f8ead0;
+  filter: brightness(0.97);
 }
 
 /* -- values ------------------------------------------------------------- */
@@ -442,7 +625,6 @@ tr.flagged:hover {
   padding: var(--space-2) var(--space-3);
   border: 1px solid;
   border-radius: var(--radius);
-  border-left-width: 4px;
   font-size: 13px;
 }
 
@@ -483,7 +665,7 @@ tr.flagged:hover {
 /* Skeleton with reserved height: no full-page spinner, no layout shift
    when the data arrives. */
 .skeleton {
-  background: linear-gradient(90deg, var(--bg-sunken), #e3e7ea, var(--bg-sunken));
+  background: linear-gradient(90deg, var(--bg-sunken), var(--line), var(--bg-sunken));
   background-size: 200% 100%;
   animation: shimmer 1.2s linear infinite;
   border-radius: var(--radius);
@@ -523,7 +705,7 @@ tr.flagged:hover {
   border-radius: var(--radius);
   padding: var(--space-2);
   font-size: 12px;
-  box-shadow: 0 2px 8px rgb(20 24 29 / 12%);
+  box-shadow: var(--shadow);
 }
 
 .tooltip .t {
@@ -752,11 +934,23 @@ button.sort:focus-visible {
   outline-offset: 2px;
 }
 
+/* Everything becomes instant, with one exception: the indicators that say a
+   job is still running. Freezing those leaves a reader unable to tell a
+   working screen from a hung one, which is a worse outcome than the motion
+   it spares them. They are slowed down instead of stopped. */
 @media (prefers-reduced-motion: reduce) {
-  * {
+  *,
+  *::before,
+  *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+  }
+
+  .spinner circle,
+  .skeleton {
+    animation-duration: 3s !important;
+    animation-iteration-count: infinite !important;
   }
 }
 
@@ -1099,4 +1293,304 @@ textarea {
    scrolls the page instead of itself. */
 .facts dd {
   min-width: 0;
+}
+
+/* -- the mark, in the header -------------------------------------------- */
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  white-space: nowrap;
+  text-decoration: none;
+  color: inherit;
+}
+
+.brand:hover {
+  text-decoration: none;
+}
+
+.brand svg {
+  flex: none;
+  color: var(--ink);
+}
+
+/* Letterspaced small caps at this size stop the seven letters from reading
+   as a word in a sentence and start them reading as a name. */
+.brand .word {
+  font-weight: 600;
+  font-size: 14px;
+  letter-spacing: 0.17em;
+  line-height: 1;
+}
+
+.brand .where {
+  color: var(--ink-faint);
+  font-weight: 400;
+  font-size: 12px;
+  letter-spacing: 0;
+}
+
+/* -- theme -------------------------------------------------------------- */
+
+/* Icon-only, so it carries its own accessible name and a title. The label
+   says where the click goes, not where it is now: "switch to dark". */
+button.icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+  line-height: 0;
+  color: var(--ink-soft);
+  transition:
+    color var(--dur-fast) var(--ease-out),
+    background-color var(--dur-fast) var(--ease-out);
+}
+
+button.icon-button:hover:not(:disabled) {
+  color: var(--ink);
+}
+
+/* -- waiting ------------------------------------------------------------ */
+
+/* Concentric arcs turning against each other. Only `transform` animates, so
+   the whole thing lives on the compositor and costs no frame work; there is
+   no JavaScript behind it and nothing here is timed in script. */
+.spinner {
+  display: inline-block;
+  flex: none;
+  color: var(--ink);
+  vertical-align: -0.15em;
+}
+
+.spinner circle {
+  fill: none;
+  transform-origin: 20px 20px;
+  animation: spinner-turn var(--turn) linear infinite;
+}
+
+.spinner .ring-outer {
+  stroke: var(--line-strong);
+  --turn: 2.6s;
+}
+
+.spinner .ring-middle {
+  stroke: var(--ink-soft);
+  --turn: 1.9s;
+  animation-direction: reverse;
+}
+
+.spinner .ring-inner {
+  stroke: var(--ink);
+  --turn: 1.3s;
+}
+
+@keyframes spinner-turn {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* The indicator never says "loading". It says which cell, out of how many.
+   The height is reserved so the row does not grow when the counter appears. */
+.progress {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 44px;
+}
+
+.progress-body {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.progress-label {
+  font-size: 13px;
+  color: var(--ink);
+}
+
+.progress-detail {
+  font-size: 12px;
+  color: var(--ink-soft);
+  min-height: 17px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.progress-count {
+  font-size: 12px;
+  color: var(--ink-soft);
+}
+
+.progress-track {
+  margin-top: 6px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--bg-sunken);
+  overflow: hidden;
+}
+
+.progress-track > i {
+  display: block;
+  height: 100%;
+  background: var(--ink);
+  transition: width var(--dur-slow) var(--ease-out);
+}
+
+/* Nothing is known about how far along an unmeasured job is, so the bar
+   says that rather than inventing a percentage: a short segment sweeping
+   the track means "running", not "38% done". */
+.progress-track.unmeasured > i {
+  width: 34%;
+  animation: progress-sweep 1.4s var(--ease-out) infinite;
+}
+
+@keyframes progress-sweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(295%);
+  }
+}
+
+/* -- a verdict arriving ------------------------------------------------- */
+
+/* Used only where the application says the thing the page exists to say:
+   the zero gate, the admissibility verdict, the attempts panel, the final
+   metrics. Everywhere else content appears without ceremony. */
+.reveal {
+  animation: reveal var(--dur-slow) var(--ease-out) both;
+}
+
+@keyframes reveal {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reveal {
+    animation: none;
+  }
+}
+
+/* -- the live runner, on every page ------------------------------------- */
+
+/* A runner that is trading has to be visible from the page you happen to be
+   on, not only from the one about it. This sits under the header on every
+   screen and is the only element in the application that is present whether
+   or not it has anything to report. */
+.live-strip {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  padding: 5px var(--space-3);
+  border-bottom: 1px solid var(--line);
+  background: var(--bg);
+  font-size: 12px;
+  color: var(--ink-soft);
+}
+
+.live-strip.attention {
+  background: var(--warn-soft);
+  border-bottom-color: var(--warn);
+  color: var(--warn);
+}
+
+.live-strip .state {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.live-strip.attention .state {
+  color: var(--warn);
+}
+
+/* The dot is never the message - the word beside it is. It changes size and
+   fill between states so the transition is visible without being a colour
+   the reader has to decode. */
+.live-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 2px solid currentColor;
+  transition:
+    width var(--dur) var(--ease-out),
+    height var(--dur) var(--ease-out),
+    background-color var(--dur) var(--ease-out),
+    border-color var(--dur) var(--ease-out);
+}
+
+.live-dot.idle {
+  border-color: var(--line-strong);
+}
+
+.live-dot.listening {
+  background: currentColor;
+}
+
+.live-dot.holding {
+  width: 11px;
+  height: 11px;
+  background: currentColor;
+}
+
+.live-strip .what {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-soft);
+}
+
+.live-strip .spread {
+  margin-left: auto;
+}
+
+/* -- getting the data --------------------------------------------------- */
+
+/* The command that fills the cache, said out loud. Before this the only
+   sign that an instrument could be extended was that its coverage silently
+   grew after somebody ran a script. */
+.fetch {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.fetch-summary {
+  flex: 1 1 260px;
+  min-width: 0;
+}
+
+.fetch-window {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  color: var(--ink);
+}
+
+/* -- transitions -------------------------------------------------------- */
+
+/* Menus, fields and tables stay instant. What moves is what changes state
+   under the pointer, and only for as long as the press feedback needs. */
+button,
+.nav a,
+.chips label,
+.checklist label {
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+
+button:active:not(:disabled) {
+  transform: translateY(1px);
 }

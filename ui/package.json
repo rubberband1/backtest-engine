@@ -1,5 +1,5 @@
 {
-  "name": "backtest-engine-ui",
+  "name": "falsify-ui",
   "private": true,
   "version": "3.1.0",
   "type": "module",
@@ -23,5 +23,6 @@
     "openapi-typescript": "^7.4.4",
     "typescript": "^5.7.2",
     "vite": "^6.0.5"
-  }
+  },
+  "description": "A backtesting engine that tries to prove your strategy wrong."
 }

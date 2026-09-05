@@ -88,6 +88,50 @@ class CoverageOut(Model):
     spread_median_points: float | None = None
 
 
+class DownloadRequest(Model):
+    """Ask the broker for the part of a period the cache does not hold.
+
+    Only the holes are fetched. Asking for a range that is already cached is
+    a valid request that downloads nothing and says so, which is the honest
+    answer and also the cheap one.
+    """
+
+    symbol: str = Field(min_length=1, max_length=64)
+    timeframe: str = "M1"
+    start: datetime
+    end: datetime
+
+
+class DownloadHoleOut(Model):
+    """One gap the job set out to fill, and what came back for it."""
+
+    start: datetime
+    end: datetime
+    bars: int = 0
+
+
+class DownloadJobOut(Model):
+    """A download is minutes of network: it is a job, polled, not a wait."""
+
+    job_id: str
+    status: Literal["running", "done", "error"]
+    symbol: str
+    timeframe: str
+    started_at: datetime
+    finished_at: datetime | None = None
+    completed_holes: int = 0
+    total_holes: int = 0
+    current: str | None = None
+    error: str | None = None
+    holes: list[DownloadHoleOut] = Field(default_factory=list)
+    # what the cache holds for this pair now that the job has finished, so
+    # the caller can show the before and after without a second request
+    bars_before: int = 0
+    bars_after: int = 0
+    first_bar: datetime | None = None
+    last_bar: datetime | None = None
+
+
 # -- strategies ----------------------------------------------------------
 
 
@@ -139,6 +183,40 @@ class StrategyRefBase(Model):
 
     strategy_id: str | None = None
     spec: dict[str, Any] | None = None
+
+
+class Watched(Model):
+    """A request whose progress the caller wants to watch while it runs.
+
+    The token is the caller's own: it invents one, sends it, and polls
+    `/api/progress/{token}` beside the request it is waiting on. Omitting it
+    changes nothing about the call, and no core loop reports anything.
+    """
+
+    progress_token: str | None = Field(
+        default=None,
+        max_length=64,
+        pattern=r"^[A-Za-z0-9_-]+$",
+        description="poll GET /api/progress/{token} while this call runs",
+    )
+
+
+class ProgressOut(Model):
+    """How far into a job the server is.
+
+    `total` of zero means the work has no countable steps, and the client is
+    expected to say that it is running rather than invent a share.
+    """
+
+    token: str
+    label: str
+    status: Literal["running", "done", "error"]
+    started_at: datetime
+    finished_at: datetime | None = None
+    completed: int = 0
+    total: int = 0
+    current: str | None = None
+    error: str | None = None
 
 
 # -- the vocabulary the editor builds from --------------------------------
@@ -271,7 +349,7 @@ class StrategyRef(StrategyRefBase):
     """The strategy arrives by id (from `strategies/`) or inline."""
 
 
-class BacktestRequest(StrategyRef):
+class BacktestRequest(StrategyRef, Watched):
     config: RunConfigIn
     force: bool = False
 
@@ -679,7 +757,7 @@ class ErrorResponse(Model):
 # -- validation: walk-forward --------------------------------------------
 
 
-class WalkForwardRequest(Model):
+class WalkForwardRequest(Watched):
     run_id: str = Field(min_length=1)
     mode: Literal["rolling", "anchored"] = "rolling"
     train_days: int = Field(default=90, ge=1, le=3650)
@@ -793,7 +871,7 @@ class WalkForwardResponse(Model):
 # -- validation: permutation ---------------------------------------------
 
 
-class PermutationRequest(Model):
+class PermutationRequest(Watched):
     run_id: str = Field(min_length=1)
     iterations: int = Field(default=1000, ge=10, le=20000)
     tests: list[Literal["random_entries", "permuted_returns"]] = Field(
@@ -924,7 +1002,7 @@ class MultipleTestingResponse(Model):
 # -- validation: tick resolve --------------------------------------------
 
 
-class TickResolveRequest(Model):
+class TickResolveRequest(Watched):
     run_id: str = Field(min_length=1)
 
 
@@ -974,7 +1052,7 @@ class BatchPeriodIn(Model):
     end: datetime | None = None
 
 
-class BatchRequest(StrategyRef):
+class BatchRequest(StrategyRef, Watched):
     symbols: list[str] = Field(min_length=1, max_length=64)
     config: RunConfigIn
     periods: list[BatchPeriodIn] = Field(default_factory=list)
@@ -1233,6 +1311,10 @@ class LiveSessionOut(Model):
     last_event_at: datetime | None = None
     stopped: bool = False
     running: bool = False
+    # Derived from the diary, not from the broker: the API never talks to
+    # MT5 about a live session. An accepted order opens it, an adopted
+    # position on reconnect opens it, `position_closed` closes it.
+    in_position: bool = False
     # A diary with no lock beside it was never written by a live process: a
     # replay leaves one, and calling that a crashed runner would be a false
     # alarm on the one screen that must not cry wolf.

@@ -25,7 +25,7 @@ from __future__ import annotations
 import copy
 import itertools
 import logging
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta, tzinfo
 from typing import Any, Literal
@@ -306,6 +306,7 @@ def walk_forward(
     config: WalkForwardConfig | None = None,
     grid: ParameterGrid | None = None,
     reference_trades: pd.DataFrame | None = None,
+    on_progress: Callable[[int, int], None] | None = None,
 ) -> WalkForwardReport:
     """Optimize on each in-sample leg, apply the winner to the leg that follows."""
     config = config or WalkForwardConfig()
@@ -348,6 +349,8 @@ def walk_forward(
     equity = backtest_config.initial_equity
 
     for index, (train_start, train_end, test_start, test_end) in enumerate(windows_spans):
+        if on_progress is not None:
+            on_progress(index, len(windows_spans))
         window = WindowResult(
             index=index,
             train_start=train_start,

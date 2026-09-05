@@ -8,7 +8,9 @@ import {
   type Strategy,
   type SymbolList,
 } from "../api/client";
+import { Progress } from "../components/Progress";
 import { Badge, Empty, ErrorNotice, Field, Loading, Notice, Panel, Signed } from "../components/ui";
+import { useWatched } from "../progress";
 import { int, num, pct, signedMoney } from "../format";
 
 type SortKey = keyof Pick<
@@ -55,6 +57,7 @@ export function BatchPage() {
 
   const [report, setReport] = useState<BatchResponse | null>(null);
   const [busy, setBusy] = useState(false);
+  const watched = useWatched();
   const [error, setError] = useState<unknown>(null);
   const [sort, setSort] = useState<{ key: SortKey; asc: boolean }>({ key: "mean_r", asc: false });
 
@@ -94,7 +97,9 @@ export function BatchPage() {
     per_bar_spread_quantile: 0.5,
       };
       setReport(
-        await api.batch({ strategy_id: strategyId, symbols: picked, config }),
+        await watched.watch((progress_token) =>
+          api.batch({ progress_token, strategy_id: strategyId, symbols: picked, config }),
+        ),
       );
     } catch (problem) {
       setError(problem);
@@ -235,9 +240,11 @@ export function BatchPage() {
       {error !== null && <ErrorNotice error={error} />}
       {busy && (
         <Panel title="Batch running">
-          <Loading
-            label={`Running ${picked.length} backtests in parallel. Each one is a full run.`}
-            height={220}
+          <Progress
+            label="Running the cells in parallel, each a full backtest"
+            detail={`${picked.length} instrument${picked.length === 1 ? "" : "s"} on ${strategyId}`}
+            completed={watched.progress?.completed}
+            total={watched.progress?.total}
           />
         </Panel>
       )}

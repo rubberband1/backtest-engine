@@ -30,6 +30,12 @@ dev = [
     "pandas-stubs",
     "types-PyYAML",
 ]
+# The desktop window. Not a dependency of the engine: a machine that only
+# runs backtests, or CI, installs none of this.
+desktop = ["pywebview>=5.0"]
+# Building the Windows executable. Separate from `desktop` because running
+# the window and packaging it are different jobs on different machines.
+build = ["pywebview>=5.0", "pyinstaller>=6.0"]
 
 [tool.setuptools.packages.find]
 include = ["core*", "api*"]
@@ -71,6 +77,9 @@ ignore = [
 "scripts/*" = ["T20"]
 "examples/*" = ["T20"]
 "run.py" = ["T20"]
+# The desktop entry point, like run.py: it prints to a console when it cannot
+# start a window, which is the only place that message can go.
+"desktop.py" = ["T20"]
 # Tests assert on behaviour, and a long test name is documentation.
 "tests/*" = ["E501"]
 

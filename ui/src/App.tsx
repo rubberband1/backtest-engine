@@ -1,5 +1,8 @@
 import { useEffect, useState } from "react";
 import { api, type SymbolList } from "./api/client";
+import { Brand } from "./brand";
+import { LiveStrip } from "./components/LiveStrip";
+import { MoonIcon, SunIcon } from "./components/icons";
 import { BatchPage } from "./pages/BatchPage";
 import { ComparePage } from "./pages/ComparePage";
 import { LivePage } from "./pages/LivePage";
@@ -9,16 +12,19 @@ import { ScreenPage } from "./pages/ScreenPage";
 import { StrategyPage } from "./pages/StrategyPage";
 import { ValidationPage } from "./pages/ValidationPage";
 import { useRoute } from "./router";
+import { useTheme } from "./theme";
 
 export function App() {
   const route = useRoute();
   const [environment, setEnvironment] = useState<SymbolList | null>(null);
+  const [theme, toggleTheme] = useTheme();
 
   useEffect(() => {
     api.symbols().then(setEnvironment).catch(() => setEnvironment(null));
   }, []);
 
   const onFixture = environment?.source === "fixture";
+  const goingDark = theme === "light";
 
   return (
     <div className="app">
@@ -33,9 +39,7 @@ export function App() {
         </div>
       )}
       <header className="topbar">
-        <div className="brand">
-          backtest-engine <span>· local</span>
-        </div>
+        <Brand />
         <nav className="nav">
           <a href="#/" aria-current={route.name === "run" ? "page" : undefined}>
             Run
@@ -84,7 +88,19 @@ export function App() {
               : "backend not reachable"}
           </div>
         </div>
+        {/* The label says where the click goes, not where the theme is now. */}
+        <button
+          type="button"
+          className="icon-button"
+          onClick={toggleTheme}
+          aria-label={`Switch to the ${goingDark ? "dark" : "light"} theme`}
+          title={`Switch to the ${goingDark ? "dark" : "light"} theme`}
+        >
+          {goingDark ? <MoonIcon /> : <SunIcon />}
+        </button>
       </header>
+
+      <LiveStrip />
 
       <main>
         {route.name === "run" && <RunPage />}

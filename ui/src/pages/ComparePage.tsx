@@ -12,9 +12,17 @@ import {
 import { api, type CompareResponse, type RunSummary } from "../api/client";
 import { Badge, Empty, ErrorNotice, Loading, Notice, Panel, Signed } from "../components/ui";
 import { byFormat, int, num, pct, utcDate, utcDateTime } from "../format";
+import { DRAW_MS, useFirstDraw } from "../motion";
 
 /** Colours that stay distinguishable printed in greyscale (different luminance). */
-const SERIES_COLORS = ["#1b4f9c", "#a4232a", "#146c43", "#8a5a00", "#5b2d8e", "#0f6d78"];
+const SERIES_COLORS = [
+  "var(--series-1)",
+  "var(--series-2)",
+  "var(--series-3)",
+  "var(--series-4)",
+  "var(--series-5)",
+  "var(--series-6)",
+];
 
 export function ComparePage({ initialRunIds }: { initialRunIds: string[] }) {
   const [runs, setRuns] = useState<RunSummary[] | null>(null);
@@ -149,6 +157,9 @@ export function ComparePage({ initialRunIds }: { initialRunIds: string[] }) {
 }
 
 function ComparisonView({ comparison }: { comparison: CompareResponse }) {
+  // Keyed on the set being compared, so picking a different set of runs draws
+  // the new curves once and changing a filter on the same set does not.
+  const draw = useFirstDraw(comparison.runs.map((run) => run.run_id).join(","));
   const data = useMemo(
     () =>
       comparison.series.map((point) => {
@@ -207,7 +218,7 @@ function ComparisonView({ comparison }: { comparison: CompareResponse }) {
         <div className="chart-frame" style={{ height: 340, padding: "8px 8px 0" }}>
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={data} margin={{ top: 8, right: 16, bottom: 0, left: 8 }}>
-              <CartesianGrid stroke="#eceff1" />
+              <CartesianGrid stroke="var(--chart-grid)" />
               <XAxis
                 dataKey="ts"
                 type="number"
@@ -223,7 +234,7 @@ function ComparisonView({ comparison }: { comparison: CompareResponse }) {
                 domain={["auto", "auto"]}
                 tickFormatter={(value: number) => num(value, 0)}
               />
-              <ReferenceLine y={100} stroke="#5a646e" strokeDasharray="4 3" />
+              <ReferenceLine y={100} stroke="var(--chart-axis)" strokeDasharray="4 3" />
               <Tooltip
                 isAnimationActive={false}
                 content={({ active, payload, label }) => {
@@ -260,7 +271,9 @@ function ComparisonView({ comparison }: { comparison: CompareResponse }) {
                   strokeWidth={1.6}
                   dot={false}
                   connectNulls={false}
-                  isAnimationActive={false}
+                  isAnimationActive={draw}
+                  animationDuration={DRAW_MS}
+                  animationEasing="ease-out"
                 />
               ))}
             </LineChart>

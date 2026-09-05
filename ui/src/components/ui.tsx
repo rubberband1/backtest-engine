@@ -8,9 +8,11 @@ export function Panel(props: {
   aside?: ReactNode;
   children: ReactNode;
   tight?: boolean;
+  /** `reveal` on the panels that carry a verdict. Nothing else uses it. */
+  className?: string;
 }) {
   return (
-    <section className="panel">
+    <section className={`panel${props.className ? ` ${props.className}` : ""}`}>
       {(props.title || props.aside) && (
         <header className="panel-head">
           {typeof props.title === "string" ? <h2>{props.title}</h2> : props.title}

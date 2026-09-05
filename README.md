@@ -1,4 +1,10 @@
-# backtest-engine
+<img src="brand/falsify-icon.svg" width="56" alt="" align="left" hspace="14" vspace="2">
+
+# Falsify
+
+**A backtesting engine that tries to prove your strategy wrong.**
+
+<br clear="left">
 
 [![CI](https://github.com/rubberband1/backtest-engine/actions/workflows/ci.yml/badge.svg)](https://github.com/rubberband1/backtest-engine/actions/workflows/ci.yml)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%20%7C%203.12-blue)](https://www.python.org/)
@@ -12,6 +18,11 @@ a strategy. Across two campaigns it has screened 600 configurations — 10
 classic strategies over 10 instruments and up to six years of history — and
 reported that none of them survives the correction for having tried that many
 things. That is the result, and the engine is what makes it trustworthy.**
+
+The name is Popper's: a claim earns its keep only by surviving attempts to
+break it, and that is what the machinery below is for. The repository, the
+Python packages and the import paths stay `backtest-engine` - only the
+product has a name.
 
 Seventy of those 600 cells are refused before anything is tested on them,
 because the broker's spread is too large a share of the intended stop, and a
@@ -96,7 +107,7 @@ Getting to an honest "no" takes more machinery than getting to a hopeful
   cells that produced a Sharpe worth comparing, **33 had none at all**: the
   best of them, `rsi-mean-reversion` on `AUDUSD.r` H4 at +0.1990 over 172
   trades, was charged an assumed cost on all 8,214 of its bars.
-- 596 tests, including one that recomputes signals on truncated history to
+- 629 tests, including one that recomputes signals on truncated history to
   prove no rule can see the future, one that demands a dry-run diary compare
   to its own backtest at exactly zero, and one that regenerates the shipped
   dataset and diffs it against what is committed.
@@ -159,14 +170,15 @@ each one comes from.
 Run the tests, which do not need a terminal either:
 
 ```
-.venv/Scripts/python -m pytest -q     # 587 pass, 9 skip on a fresh clone
+.venv/Scripts/python -m pytest -q     # 620 pass, 9 skip on a fresh Windows clone
 ```
 
 Nine skips, and each says why. Eight are marked `mt5` and talk to the
 MetaTrader 5 terminal. The ninth is the golden reference measured on real
 XAUUSD.r bars, which only exist on the machine that downloaded them — but the
 *second* golden reference, measured on the committed fixture, does run, so a
-clone still has the guard that pins the engine's output to the trade.
+clone still has the guard that pins the engine's output to the trade. On Linux
+and macOS a tenth skips: it covers a Windows-only failure mode of `os.kill`.
 
 Everything else — the engine, the cost model, the statistics, the API, the
 live runner's replay equivalence — runs on generated or fixture data.
@@ -185,6 +197,68 @@ To measure anything, you need real bars, and for those you need the terminal:
 
 `run.py` prefers `data_cache/` over the fixture as soon as there is anything
 in it, and says on start-up which of the two it is serving.
+
+### As a desktop application
+
+`run.py` is the development path: it starts Vite, watches the sources and
+reloads. The other one is a window with no browser around it, and no Node in
+it at all — the frontend is compiled once and served by the same FastAPI
+process:
+
+```
+.venv/Scripts/python -m pip install -e ".[desktop]"
+cd ui && npm ci && npm run build && cd ..
+.venv/Scripts/python desktop.py
+```
+
+It picks a free port rather than failing when 8000 is taken, shows the
+backend's own traceback in the window when the backend does not come up
+instead of closing on a blank screen, and asks before closing while a live
+runner is still trading — it names the runners and says they keep going in
+their own processes.
+
+To build the Windows executable:
+
+```
+.venv/Scripts/python -m pip install -e ".[build]"
+cd ui && npm ci && npm run build && cd ..
+.venv/Scripts/python -m scripts.make_icons
+.venv/Scripts/pyinstaller falsify.spec --noconfirm
+```
+
+The result is `dist/Falsify/Falsify.exe`, which starts on a double click. It
+is one directory rather than one file on purpose: a onefile build unpacks
+pandas, numpy, scipy and pyarrow into a temporary directory on every launch,
+which costs ten to twenty seconds each time.
+
+The build carries the strategy library and the synthetic dataset, so it opens
+into a working application on a machine with **no MetaTrader 5 at all** —
+`core/data/mt5_provider.py` guards its import of the Windows-only package,
+and with no terminal to ask, the backend serves the fixture and says so in the
+banner. Runs, logs and downloaded bars are written next to the executable,
+never into the bundle.
+
+### The mark
+
+`brand/` holds the logo, and `scripts/make_icons.py` is what draws it: one
+geometry, rendered to the SVG the dashboard uses, the SVG the README uses, the
+browser tab icon and a seven-size Windows `.ico`. The rasteriser is a hundred
+lines of stdlib rather than a dependency — the mark is three rectangles, one
+of them turned thirty degrees, and that does not need a general SVG renderer
+in the build.
+
+```
+.venv/Scripts/python -m scripts.make_icons
+.venv/Scripts/python -m scripts.check_contrast   # the palette, in both themes
+```
+
+`check_contrast.py` reads the colour tokens out of `ui/src/styles.css` and
+measures every foreground-on-background pair the interface actually paints,
+against WCAG. It runs in the suite. It has caught two real defects so far: the
+border of every input and select sat at 2.1:1 against its own background,
+below the 3:1 a control's outline needs, and the green and the red were within
+a hundredth of a luminance of each other — identical in a greyscale screenshot
+and to a reader who cannot separate the two hues.
 
 ## Layout
 
@@ -212,6 +286,7 @@ core/validation/           walk-forward, permutation, multiple testing, tick res
 core/batch/                same spec over many instruments + cross-sectional consistency
 core/version.py            engine version (single source of truth)
 api/                       FastAPI, 127.0.0.1 only
+api/progress.py            how far into a long call the server is
 ui/                        Vite + React + TypeScript
 strategies/                the JSON specs, including the library of classics
 tests/                     pytest; integration tests are marked `mt5`
@@ -223,12 +298,18 @@ scripts/run_live.py        the live runner, on closed bars
 scripts/compare_live.py    the forward test's diary against a backtest of it
 scripts/forward_test.ps1   start / stop / status / report, detached
 scripts/migrate_spread_column.py  one-shot: rename the raw column, mark old runs
+scripts/make_icons.py      draws the mark: SVGs, the favicon and the Windows .ico
+scripts/check_contrast.py  the colour tokens against WCAG, in both themes
 campaigns/                 the campaign this README's claim rests on, re-runnable
 docs/forward-test.md       how to run the forward test and how to read it
 docs/methodology.md        the choices that decide results, and why
 docs/limitations.md        what this cannot tell you
+docs/interface.md          the visual system, and what is allowed to move
 fixtures/data_cache/       the committed synthetic dataset (invented data)
+brand/                     the mark, generated by scripts/make_icons.py
 run.py                     starts everything and opens the browser
+desktop.py                 the same application in a window, no browser, no Node
+falsify.spec               PyInstaller build of that window
 ```
 
 `provider.py` contains nothing MetaTrader-specific: adding a second provider
