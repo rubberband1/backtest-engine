@@ -120,10 +120,19 @@ Two thresholds are reported next to the best observed value:
 - **Required value**: what the observed best must clear to be credible at 95%
   confidence after the correction for N attempts.
 
-On the current 600-attempt campaign: best observed **+0.19897** per trade
-(rsi-mean-reversion / AUDUSD.r / H4, 172 trades), expected-by-luck
-**+0.3097**, required **+0.4415**. The best result is below the level a random
-search of the same size reaches for free. Zero cells survive Bonferroni.
+On the campaign committed in `campaigns/`: 600 cells, of which 70 are refused
+at stage zero, leaving **530 attempts**. Best observed **+0.3307** per trade
+(ma-crossover / XTIUSD / H1 over 2025, 32 trades, spread measured on 74.9% of
+its bars), expected-by-luck **+0.3024**, required **+0.6254**. The best result
+is barely above the level a random search of the same size reaches for free,
+and well below what it would have to clear. Zero cells survive Bonferroni.
+
+**The maximum has to come from the same search the count does.** A campaign
+run in two sittings used to count both halves in N and then take its maximum
+over the half it was running, which reported a *smaller* best than the search
+had produced and made the winner depend on where the operator stopped for the
+night. Carried cells are now candidates as well as observations, and each
+carries its own trade count, because the required threshold divides by it.
 
 ### Where this went wrong once
 

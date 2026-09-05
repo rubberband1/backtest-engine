@@ -10,15 +10,24 @@
 **A backtesting engine for MetaTrader 5 data, built so that it cannot flatter
 a strategy. Across two campaigns it has screened 600 configurations — 10
 classic strategies over 10 instruments and up to six years of history — and
-reported that none of them survives the correction for having tried 600
+reported that none of them survives the correction for having tried that many
 things. That is the result, and the engine is what makes it trustworthy.**
 
-The best cell with enough trades to mean anything scores a Sharpe per trade of
-**+0.1990** over 172 trades. A search of 600 attempts is expected to reach
-**+0.3097** by luck alone, and the observed value would have to clear
-**+0.4415** to be credible at 95% confidence. It does not. Zero cells survive
-Bonferroni. The engine says so in one line, on screen, above the results
-table.
+Seventy of those 600 cells are refused before anything is tested on them,
+because the broker's spread is too large a share of the intended stop, and a
+refusal is not an experiment. That leaves **530 attempts**. The best cell with
+enough trades to mean anything scores a Sharpe per trade of **+0.3307** over
+32 trades — `ma-crossover` on `XTIUSD` H1 over 2025, charged a spread measured
+on 74.9% of its bars. A search of 530 attempts is expected to reach **+0.3024**
+by luck alone, and the observed value would have to clear **+0.6254** to be
+credible at 95% confidence. It does not. Zero cells survive Bonferroni. The
+engine says so in one line, on screen, above the results table.
+
+**That campaign is in the repository**, in [campaigns/](campaigns/): the grid,
+the frozen instrument specs, the report and the table, for both halves. One
+command re-runs either from its manifest and diffs it cell by cell, and both
+reproduce with every compared field matching. Every figure in this paragraph
+names a cell in that report.
 
 The most valuable thing it has produced is not a strategy but a correction to
 its own arithmetic. Measured against the M1 bars inside them, **the `spread`
@@ -73,14 +82,21 @@ Getting to an honest "no" takes more machinery than getting to a hopeful
   moves while a campaign runs, so every cell used to be executed against a
   slightly different contract and re-running one never reproduced it. A
   campaign now writes a manifest, and one command re-runs it from that and
-  diffs cell by cell. With `tick_value` moved underneath it, the same
-  campaign re-run without the manifest reported a different net PnL; from the
-  manifest it matched exactly, and the drift was printed as drift.
+  diffs cell by cell. The case for it turned out to be stronger than the
+  `tick_value` drift it was built for: between the previous campaign and the
+  committed one the broker rewrote **XTIUSD's swap from −126.4 points a night
+  to −0.7**, and the ten cells whose trade count changed are all on the two
+  instruments whose swap moved. One of them went from a busted account at 21
+  trades to +350 at 38. Without frozen contracts that is indistinguishable
+  from an engine regression.
 - **The spread says whether it was measured or assumed.** Where no M1 bars
   exist, the cost charged is a constant taken from a later period. Every run
   and every campaign cell now reports the share of its bars that had an M1
-  sample behind them. The best cell of the campaign above reads **0.0%**.
-- 571 tests, including one that recomputes signals on truncated history to
+  sample behind them, and no result above is quoted without it. Of the 101
+  cells that produced a Sharpe worth comparing, **33 had none at all**: the
+  best of them, `rsi-mean-reversion` on `AUDUSD.r` H4 at +0.1990 over 172
+  trades, was charged an assumed cost on all 8,214 of its bars.
+- 577 tests, including one that recomputes signals on truncated history to
   prove no rule can see the future, one that demands a dry-run diary compare
   to its own backtest at exactly zero, and one that regenerates the shipped
   dataset and diffs it against what is committed.
@@ -122,10 +138,28 @@ instruments over 2022-2023 on M1/H1/H4/D1), and `run.py` serves it whenever
 > can be concluded. Nothing in the results reported in this README was
 > measured on it.
 
+### Which numbers below a clone can check, and which it cannot
+
+Worth stating plainly, because a README full of measurements should say where
+each one comes from.
+
+- **The campaign** — every figure in the opening paragraph — is committed in
+  [campaigns/](campaigns/) as a report you can read without running anything.
+  Re-executing it needs the bars, which are not in the repository.
+- **The engine's behaviour** — fills, costs, the look-ahead test, the
+  statistics, the live runner's replay equivalence, both golden references —
+  is checked by the suite on a fresh clone, with no terminal and no network.
+- **The measurements on real bars** — the spread-above-M1 finding, the
+  broker's history depth, the quality report on 2025, the `tick_value` drift
+  in the golden reference, the ambiguity share on the M1 baseline — were taken
+  on one installation's `data_cache/` (fpmarkets, server Europe/Athens) and a
+  clone cannot reproduce them without the same account and the same history.
+  Each is labelled where it appears.
+
 Run the tests, which do not need a terminal either:
 
 ```
-.venv/Scripts/python -m pytest -q     # 562 pass, 9 skip on a fresh clone
+.venv/Scripts/python -m pytest -q     # 568 pass, 9 skip on a fresh clone
 ```
 
 Nine skips, and each says why. Eight are marked `mt5` and talk to the
@@ -189,6 +223,7 @@ scripts/run_live.py        the live runner, on closed bars
 scripts/compare_live.py    the forward test's diary against a backtest of it
 scripts/forward_test.ps1   start / stop / status / report, detached
 scripts/migrate_spread_column.py  one-shot: rename the raw column, mark old runs
+campaigns/                 the campaign this README's claim rests on, re-runnable
 docs/forward-test.md       how to run the forward test and how to read it
 docs/methodology.md        the choices that decide results, and why
 docs/limitations.md        what this cannot tell you
@@ -746,6 +781,24 @@ assumption is printed with the result, as is the fact that cells sharing an
 instrument or a strategy are not independent, which makes the correction
 generous rather than strict.
 
+### The campaign this README quotes
+
+It is in [campaigns/](campaigns/), in two halves — the intraday grid over 2025
+and the H1/H4/D1 grid back to 2020 — each with its YAML, its frozen manifest,
+its JSON report and its table. The second carries the first's attempts and
+results, so the correction it applies covers the whole search rather than the
+half it happens to be running.
+
+```
+python -m scripts.verify_campaign campaigns/02-deep-history-2020.yaml \
+    --manifest campaigns/02-deep-history-2020.manifest.json \
+    --report   campaigns/02-deep-history-2020.report.json
+```
+
+Exit code 0 when every compared field of every cell matches. Both halves do.
+Re-running needs the bars, which are not committed; `campaigns/README.md` says
+what moved since the previous campaign and why.
+
 `strategies/` holds ten classic rules — moving-average crossover, RSI and
 Bollinger mean reversion, Bollinger and Donchian breakouts, MACD, stochastic,
 ROC momentum, an EMA trend filter and a volatility-confirmed breakout — each
@@ -826,9 +879,10 @@ and `tests/test_api.py` holds a test that says so.
 ## The forward test
 
 `rsi-mean-reversion` on `AUDUSD.r` H4 runs in dry run against the demo
-account, writing every decision to a diary. It has no edge — it was the best
-cell of a 600-attempt campaign at +0.1990 per trade against a required
-+0.4415 — and that is not what is under test. The infrastructure is.
+account, writing every decision to a diary. It has no edge — it is the fourth
+cell of a 530-attempt search at +0.1990 per trade against a required +0.6254,
+and it was charged an assumed spread on every one of its 8,214 bars — and that
+is not what is under test. The infrastructure is.
 
 ```powershell
 ./scripts/forward_test.ps1 -Start     # detached; closing the shell does not stop it

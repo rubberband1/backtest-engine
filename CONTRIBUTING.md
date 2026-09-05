@@ -57,6 +57,22 @@ that were handed different specs measures the specs. If you are adding
 something that reads a spec at comparison time, it is almost certainly a bug -
 see the note at the top of `core/live/compare.py`.
 
+**The committed campaign is an artefact, not a scratch file.** `campaigns/`
+holds the report the README's central claim rests on, with the manifest that
+freezes the contracts it ran against. Re-running it overwrites that report, so
+if you only want to check that it still reproduces, use the verifier - it
+writes nothing unless asked:
+
+```
+python -m scripts.verify_campaign campaigns/02-deep-history-2020.yaml \
+    --manifest campaigns/02-deep-history-2020.manifest.json \
+    --report   campaigns/02-deep-history-2020.report.json
+```
+
+It needs the bars, which are not in the repository. If you do replace the
+report, `campaigns/README.md` has to say what moved and why, the same way the
+engine changelog does.
+
 **Do not widen what can send an order.** The research half of the codebase
 cannot trade. The live runner defaults to dry run and refuses a non-demo
 account when told to send. Both of those are tested.

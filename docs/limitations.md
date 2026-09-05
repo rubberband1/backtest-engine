@@ -111,20 +111,32 @@ every run, every campaign cell and the campaign panel:
 
 | instrument / timeframe | bars with an M1 sample behind them |
 |---|---|
+| XTIUSD H1 (2025) | 74.9% (4,417 of 5,897) |
 | AUDUSD.r H4 | **0.0%** (0 of 8,214) |
 | XAUUSD.r H1 | 11.5% (4,436 of 38,510) |
 | EURUSD.r H1 | 2.4% (4,167 of 171,813) |
 
-The first row is the campaign's own best cell. **The best result of the
-600-attempt search - rsi-mean-reversion on AUDUSD.r H4, +0.19897 per trade
-over 172 trades - was charged an assumed spread on every single bar**,
-3.0 points measured over 2025-05-01 to 2025-12-31 and applied back to 2021.
+Of the 101 cells in the committed campaign that produced a Sharpe over at
+least 30 trades, **33 were charged a spread with no M1 sample behind a single
+bar**. The top of the table is mixed, and the coverage belongs next to every
+figure quoted from it:
 
-Taken with the tick measurement above, the direction is favourable: AUDUSD's
-2023 median was 2.0 points against the 3.0 charged, so that cell was, if
-anything, billed too much. But "the assumption happens to be conservative"
-is a different statement from "the cost was measured", and only the second
-one is a result. The cell does not clear its threshold either way.
+| cell | Sharpe/trade | trades | measured spread |
+|---|---|---|---|
+| ma-crossover / XTIUSD / H1 / 2025 | +0.3307 | 32 | 74.9% |
+| ma-crossover / EURUSD.r / H1 / 2025 | +0.2432 | 40 | 67.0% |
+| rsi-mean-reversion / XTIUSD / D1 | +0.2251 | 38 | **0.0%** |
+| rsi-mean-reversion / AUDUSD.r / H4 | +0.1990 | 172 | **0.0%** |
+
+The two rows at 0.0% were charged a constant measured over a later window and
+applied backwards - 30.0 points on XTIUSD, 3.0 on AUDUSD.r, the latter
+measured over 2025-05-01 to 2025-12-31 and applied back to 2021.
+
+Taken with the tick measurement above, the direction is favourable on AUDUSD:
+its 2023 median was 2.0 points against the 3.0 charged, so that cell was, if
+anything, billed too much. But "the assumption happens to be conservative" is
+a different statement from "the cost was measured", and only the second one is
+a result. None of these cells clears its threshold either way.
 
 ---
 
@@ -133,7 +145,7 @@ one is a result. The cell does not clear its threshold either way.
 The Result panel reports the correction for the attempts made **on that
 instrument and period**; the campaign report corrects for the **entire
 search**. Both are defensible and they are not the same number - 50 attempts
-and 600 attempts give different thresholds for the same observed value.
+and 530 attempts give different thresholds for the same observed value.
 
 A reader who sees one figure in one place and a different one in another,
 without being told which scope each belongs to, will reasonably conclude one
@@ -141,11 +153,18 @@ of them is wrong. Both are now labelled and both are shown: the editor's KPI
 leads with the whole-search threshold - the one that governs a claim of
 discovery - and names the per-instrument one underneath, with a table giving
 the attempts, the expected-by-luck value and the required value at each
-scope. On the current store that reads 448 attempts / +0.3668 required across
-the whole search against 50 attempts / +0.3216 on AUDUSD.r.
+scope.
 
-What remains true is that the two will always differ, and that the wider one
-is the one to quote.
+Both figures come from the local run store, which is **not** committed and
+grows every time anything is run - so unlike the campaign in `campaigns/`,
+they are a property of one machine's history rather than of this repository,
+and they are quoted here as an illustration of the shape rather than as a
+result. On the store this was written against: 862 attempts / +0.4524 required
+across the whole search, against 100 attempts / +0.4003 on AUDUSD.r H4 over
+2020-2026.
+
+What remains true is that the two will always differ, that the wider one is
+the one to quote, and that running one more variant raises both.
 
 ---
 
@@ -173,9 +192,12 @@ reaches the market, so slippage is not measured at all - the comparison report
 says so rather than printing a zero. Nothing here has been validated against
 real fills, at any size.
 
-The strategy being forward-tested has no edge and is not expected to. It was
-the best cell of a 600-attempt campaign at +0.1990 per trade against a
-required +0.4415, which is a fact about the search, not a candidate.
+The strategy being forward-tested has no edge and is not expected to. It is
+the fourth cell of a 530-attempt search at +0.1990 per trade against a required
++0.6254, on an instrument and timeframe where the spread was assumed on every
+bar - which is a fact about the search, not a candidate. It was chosen when it
+was the best cell the campaign reported; correcting the campaign moved it down
+the table and did not change what the forward test is for.
 
 ---
 
