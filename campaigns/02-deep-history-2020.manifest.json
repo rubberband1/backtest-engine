@@ -1,0 +1,481 @@
+{
+  "manifest_version": 2,
+  "created_at": "2026-09-05T13:23:39.828870+00:00",
+  "engine_version": "5.0.0",
+  "note": null,
+  "strategies": [
+    "strategies/ma-crossover.json",
+    "strategies/rsi-mean-reversion.json",
+    "strategies/bollinger-breakout.json",
+    "strategies/bollinger-mean-reversion.json",
+    "strategies/macd-signal.json",
+    "strategies/donchian-breakout.json",
+    "strategies/stochastic-reversal.json",
+    "strategies/roc-momentum.json",
+    "strategies/ema-trend-filter.json",
+    "strategies/atr-volatility-breakout.json"
+  ],
+  "symbols": [
+    "XAUUSD.r",
+    "XAGUSD.r",
+    "XAUEUR.r",
+    "EURUSD.r",
+    "GBPUSD.r",
+    "USDJPY.r",
+    "AUDUSD.r",
+    "USDCAD.r",
+    "XTIUSD",
+    "XBRUSD"
+  ],
+  "timeframes": [
+    "H1",
+    "H4",
+    "D1"
+  ],
+  "config": {
+    "symbol": "XAUUSD.r",
+    "timeframe": "H1",
+    "start": "2020-01-01T00:00:00+00:00",
+    "end": "2026-09-04T00:00:00+00:00",
+    "initial_equity": 100.0,
+    "spread_mode": "per_bar",
+    "spread_value": null,
+    "commission_per_lot_per_side": 0.0,
+    "swap_mode": "points",
+    "session_threshold": 0.5,
+    "per_bar_spread_quantile": 0.5
+  },
+  "server_timezone": "Europe/Athens",
+  "symbol_specs": {
+    "XAUUSD.r": {
+      "read_at": "2026-09-05T12:04:32.793093+00:00",
+      "spec": {
+        "name": "XAUUSD.r",
+        "point": 0.01,
+        "digits": 2,
+        "contract_size": 100.0,
+        "tick_value": 0.8605111436193099,
+        "tick_size": 0.01,
+        "volume_min": 0.01,
+        "volume_max": 20.0,
+        "volume_step": 0.01,
+        "swap_long": -63.88,
+        "swap_short": 39.45,
+        "currency_profit": "USD",
+        "trade_mode": "full"
+      }
+    },
+    "XAGUSD.r": {
+      "read_at": "2026-09-05T12:04:32.793093+00:00",
+      "spec": {
+        "name": "XAGUSD.r",
+        "point": 0.001,
+        "digits": 3,
+        "contract_size": 5000.0,
+        "tick_value": 4.302555718096549,
+        "tick_size": 0.001,
+        "volume_min": 0.01,
+        "volume_max": 20.0,
+        "volume_step": 0.01,
+        "swap_long": -11.27,
+        "swap_short": 4.83,
+        "currency_profit": "USD",
+        "trade_mode": "full"
+      }
+    },
+    "XAUEUR.r": {
+      "read_at": "2026-09-05T12:04:32.793093+00:00",
+      "spec": {
+        "name": "XAUEUR.r",
+        "point": 0.01,
+        "digits": 2,
+        "contract_size": 100.0,
+        "tick_value": 1.0,
+        "tick_size": 0.01,
+        "volume_min": 0.01,
+        "volume_max": 20.0,
+        "volume_step": 0.01,
+        "swap_long": -35.57,
+        "swap_short": 14.54,
+        "currency_profit": "EUR",
+        "trade_mode": "full"
+      }
+    },
+    "EURUSD.r": {
+      "read_at": "2026-09-05T12:04:32.793093+00:00",
+      "spec": {
+        "name": "EURUSD.r",
+        "point": 1e-05,
+        "digits": 5,
+        "contract_size": 100000.0,
+        "tick_value": 0.8605481691837701,
+        "tick_size": 1e-05,
+        "volume_min": 0.01,
+        "volume_max": 50.0,
+        "volume_step": 0.01,
+        "swap_long": -6.47,
+        "swap_short": 2.83,
+        "currency_profit": "USD",
+        "trade_mode": "full"
+      }
+    },
+    "GBPUSD.r": {
+      "read_at": "2026-09-05T12:04:32.793093+00:00",
+      "spec": {
+        "name": "GBPUSD.r",
+        "point": 1e-05,
+        "digits": 5,
+        "contract_size": 100000.0,
+        "tick_value": 0.8605481691837701,
+        "tick_size": 1e-05,
+        "volume_min": 0.01,
+        "volume_max": 50.0,
+        "volume_step": 0.01,
+        "swap_long": -2.22,
+        "swap_short": -2.02,
+        "currency_profit": "USD",
+        "trade_mode": "full"
+      }
+    },
+    "USDJPY.r": {
+      "read_at": "2026-09-05T12:04:32.793093+00:00",
+      "spec": {
+        "name": "USDJPY.r",
+        "point": 0.001,
+        "digits": 3,
+        "contract_size": 100000.0,
+        "tick_value": 0.5505031598881378,
+        "tick_size": 0.001,
+        "volume_min": 0.01,
+        "volume_max": 50.0,
+        "volume_step": 0.01,
+        "swap_long": 9.37,
+        "swap_short": -14.84,
+        "currency_profit": "JPY",
+        "trade_mode": "full"
+      }
+    },
+    "AUDUSD.r": {
+      "read_at": "2026-09-05T12:04:32.793093+00:00",
+      "spec": {
+        "name": "AUDUSD.r",
+        "point": 1e-05,
+        "digits": 5,
+        "contract_size": 100000.0,
+        "tick_value": 0.8605481691837701,
+        "tick_size": 1e-05,
+        "volume_min": 0.01,
+        "volume_max": 50.0,
+        "volume_step": 0.01,
+        "swap_long": -0.69,
+        "swap_short": -2.39,
+        "currency_profit": "USD",
+        "trade_mode": "full"
+      }
+    },
+    "USDCAD.r": {
+      "read_at": "2026-09-05T12:04:32.793093+00:00",
+      "spec": {
+        "name": "USDCAD.r",
+        "point": 1e-05,
+        "digits": 5,
+        "contract_size": 100000.0,
+        "tick_value": 0.6210370075952827,
+        "tick_size": 1e-05,
+        "volume_min": 0.01,
+        "volume_max": 50.0,
+        "volume_step": 0.01,
+        "swap_long": 2.68,
+        "swap_short": -8.22,
+        "currency_profit": "CAD",
+        "trade_mode": "full"
+      }
+    },
+    "XTIUSD": {
+      "read_at": "2026-09-05T12:04:32.793093+00:00",
+      "spec": {
+        "name": "XTIUSD",
+        "point": 0.001,
+        "digits": 3,
+        "contract_size": 1000.0,
+        "tick_value": 0.8605111436193099,
+        "tick_size": 0.001,
+        "volume_min": 0.01,
+        "volume_max": 20.0,
+        "volume_step": 0.01,
+        "swap_long": -0.7,
+        "swap_short": -0.7,
+        "currency_profit": "USD",
+        "trade_mode": "full"
+      }
+    },
+    "XBRUSD": {
+      "read_at": "2026-09-05T12:04:32.793093+00:00",
+      "spec": {
+        "name": "XBRUSD",
+        "point": 0.001,
+        "digits": 3,
+        "contract_size": 1000.0,
+        "tick_value": 0.8605111436193099,
+        "tick_size": 0.001,
+        "volume_min": 0.01,
+        "volume_max": 20.0,
+        "volume_step": 0.01,
+        "swap_long": 41.8,
+        "swap_short": -171.7,
+        "currency_profit": "USD",
+        "trade_mode": "full"
+      }
+    }
+  },
+  "min_trades": 30,
+  "permutation_iterations": 200,
+  "alpha": 0.05,
+  "confidence": 0.95,
+  "max_spread_atr": 0.15,
+  "gate_alteration_threshold": 0.2,
+  "check_tradability": true,
+  "prior_attempts": 230,
+  "prior_results": [
+    {
+      "cell": "ma-crossover / XAUUSD.r / M5 / 2025-01-01..2026-01-01",
+      "sharpe_per_trade": -0.19798506632032128,
+      "trades": 102
+    },
+    {
+      "cell": "ma-crossover / EURUSD.r / M15 / 2025-01-01..2026-01-01",
+      "sharpe_per_trade": -0.04835841558841699,
+      "trades": 136
+    },
+    {
+      "cell": "ma-crossover / EURUSD.r / H1 / 2025-01-01..2026-01-01",
+      "sharpe_per_trade": 0.24315649859953545,
+      "trades": 40
+    },
+    {
+      "cell": "ma-crossover / USDJPY.r / M15 / 2025-01-01..2026-01-01",
+      "sharpe_per_trade": 0.03159995121962719,
+      "trades": 143
+    },
+    {
+      "cell": "ma-crossover / XTIUSD / H1 / 2025-01-01..2026-01-01",
+      "sharpe_per_trade": 0.3307362353198561,
+      "trades": 32
+    },
+    {
+      "cell": "ma-crossover / XBRUSD / H1 / 2025-01-01..2026-01-01",
+      "sharpe_per_trade": 0.02574260512783038,
+      "trades": 32
+    },
+    {
+      "cell": "rsi-mean-reversion / XAUUSD.r / M15 / 2025-01-01..2026-01-01",
+      "sharpe_per_trade": -0.0803957326940654,
+      "trades": 197
+    },
+    {
+      "cell": "rsi-mean-reversion / XAUUSD.r / H1 / 2025-01-01..2026-01-01",
+      "sharpe_per_trade": -0.12567030193678785,
+      "trades": 60
+    },
+    {
+      "cell": "rsi-mean-reversion / EURUSD.r / M5 / 2025-01-01..2026-01-01",
+      "sharpe_per_trade": 0.03129091924434099,
+      "trades": 1651
+    },
+    {
+      "cell": "rsi-mean-reversion / EURUSD.r / M15 / 2025-01-01..2026-01-01",
+      "sharpe_per_trade": 0.015182723756096956,
+      "trades": 561
+    },
+    {
+      "cell": "rsi-mean-reversion / EURUSD.r / H1 / 2025-01-01..2026-01-01",
+      "sharpe_per_trade": 0.05483782540449608,
+      "trades": 158
+    },
+    {
+      "cell": "rsi-mean-reversion / GBPUSD.r / M5 / 2025-01-01..2026-01-01",
+      "sharpe_per_trade": 0.042612559741298316,
+      "trades": 1607
+    },
+    {
+      "cell": "rsi-mean-reversion / USDJPY.r / H1 / 2025-01-01..2026-01-01",
+      "sharpe_per_trade": -0.02501336039271835,
+      "trades": 157
+    },
+    {
+      "cell": "rsi-mean-reversion / AUDUSD.r / M5 / 2025-01-01..2026-01-01",
+      "sharpe_per_trade": -0.001036576268674928,
+      "trades": 1552
+    },
+    {
+      "cell": "rsi-mean-reversion / AUDUSD.r / M15 / 2025-01-01..2026-01-01",
+      "sharpe_per_trade": 0.03846829192046512,
+      "trades": 528
+    },
+    {
+      "cell": "rsi-mean-reversion / AUDUSD.r / H1 / 2025-01-01..2026-01-01",
+      "sharpe_per_trade": 0.19466955282869164,
+      "trades": 146
+    },
+    {
+      "cell": "rsi-mean-reversion / USDCAD.r / H1 / 2025-01-01..2026-01-01",
+      "sharpe_per_trade": 0.017588044125987044,
+      "trades": 136
+    },
+    {
+      "cell": "bollinger-breakout / XAUUSD.r / M5 / 2025-01-01..2026-01-01",
+      "sharpe_per_trade": 0.051357898162721904,
+      "trades": 2186
+    },
+    {
+      "cell": "bollinger-breakout / XAUUSD.r / M15 / 2025-01-01..2026-01-01",
+      "sharpe_per_trade": -0.07845723291630582,
+      "trades": 156
+    },
+    {
+      "cell": "bollinger-breakout / EURUSD.r / H1 / 2025-01-01..2026-01-01",
+      "sharpe_per_trade": -0.04313286622331869,
+      "trades": 197
+    },
+    {
+      "cell": "bollinger-breakout / GBPUSD.r / H1 / 2025-01-01..2026-01-01",
+      "sharpe_per_trade": 0.007067076582478303,
+      "trades": 204
+    },
+    {
+      "cell": "bollinger-breakout / USDJPY.r / M5 / 2025-01-01..2026-01-01",
+      "sharpe_per_trade": -0.03550103812974139,
+      "trades": 2315
+    },
+    {
+      "cell": "bollinger-breakout / USDJPY.r / M15 / 2025-01-01..2026-01-01",
+      "sharpe_per_trade": 0.0077430721956736155,
+      "trades": 770
+    },
+    {
+      "cell": "bollinger-breakout / USDJPY.r / H1 / 2025-01-01..2026-01-01",
+      "sharpe_per_trade": -0.2620892982735328,
+      "trades": 86
+    },
+    {
+      "cell": "bollinger-mean-reversion / XAUUSD.r / H1 / 2025-01-01..2026-01-01",
+      "sharpe_per_trade": -0.02494833466408,
+      "trades": 262
+    },
+    {
+      "cell": "bollinger-mean-reversion / EURUSD.r / M5 / 2025-01-01..2026-01-01",
+      "sharpe_per_trade": 0.0030686747460662144,
+      "trades": 3802
+    },
+    {
+      "cell": "bollinger-mean-reversion / EURUSD.r / M15 / 2025-01-01..2026-01-01",
+      "sharpe_per_trade": 0.008602890088763714,
+      "trades": 1317
+    },
+    {
+      "cell": "bollinger-mean-reversion / EURUSD.r / H1 / 2025-01-01..2026-01-01",
+      "sharpe_per_trade": 0.00014008299625415405,
+      "trades": 340
+    },
+    {
+      "cell": "bollinger-mean-reversion / USDJPY.r / H1 / 2025-01-01..2026-01-01",
+      "sharpe_per_trade": 0.03413827674481753,
+      "trades": 316
+    },
+    {
+      "cell": "bollinger-mean-reversion / AUDUSD.r / M5 / 2025-01-01..2026-01-01",
+      "sharpe_per_trade": -0.03204771815806701,
+      "trades": 3794
+    },
+    {
+      "cell": "bollinger-mean-reversion / AUDUSD.r / M15 / 2025-01-01..2026-01-01",
+      "sharpe_per_trade": 0.035184324534142164,
+      "trades": 1269
+    },
+    {
+      "cell": "bollinger-mean-reversion / AUDUSD.r / H1 / 2025-01-01..2026-01-01",
+      "sharpe_per_trade": 0.035143680858910974,
+      "trades": 341
+    },
+    {
+      "cell": "macd-signal / XAUUSD.r / M5 / 2025-01-01..2026-01-01",
+      "sharpe_per_trade": -0.13409995757401147,
+      "trades": 178
+    },
+    {
+      "cell": "donchian-breakout / GBPUSD.r / H1 / 2025-01-01..2026-01-01",
+      "sharpe_per_trade": 0.06389334132614534,
+      "trades": 209
+    },
+    {
+      "cell": "donchian-breakout / USDJPY.r / M5 / 2025-01-01..2026-01-01",
+      "sharpe_per_trade": -0.03885925420613092,
+      "trades": 2050
+    },
+    {
+      "cell": "donchian-breakout / USDJPY.r / H1 / 2025-01-01..2026-01-01",
+      "sharpe_per_trade": 0.0058682640999524905,
+      "trades": 219
+    },
+    {
+      "cell": "stochastic-reversal / XAUUSD.r / M5 / 2025-01-01..2026-01-01",
+      "sharpe_per_trade": -0.09646740740089836,
+      "trades": 445
+    },
+    {
+      "cell": "roc-momentum / XAUUSD.r / M15 / 2025-01-01..2026-01-01",
+      "sharpe_per_trade": -0.0828090521445668,
+      "trades": 132
+    },
+    {
+      "cell": "ema-trend-filter / XAUUSD.r / M15 / 2025-01-01..2026-01-01",
+      "sharpe_per_trade": -0.029644040797248684,
+      "trades": 200
+    },
+    {
+      "cell": "ema-trend-filter / EURUSD.r / M5 / 2025-01-01..2026-01-01",
+      "sharpe_per_trade": 0.01018307726844381,
+      "trades": 931
+    },
+    {
+      "cell": "ema-trend-filter / USDJPY.r / M15 / 2025-01-01..2026-01-01",
+      "sharpe_per_trade": -0.03281434018064932,
+      "trades": 286
+    },
+    {
+      "cell": "ema-trend-filter / USDCAD.r / H1 / 2025-01-01..2026-01-01",
+      "sharpe_per_trade": 0.01468044014636181,
+      "trades": 79
+    },
+    {
+      "cell": "ema-trend-filter / XBRUSD / H1 / 2025-01-01..2026-01-01",
+      "sharpe_per_trade": -0.10192855796067428,
+      "trades": 77
+    },
+    {
+      "cell": "atr-volatility-breakout / XAUUSD.r / M5 / 2025-01-01..2026-01-01",
+      "sharpe_per_trade": -0.005885614034214768,
+      "trades": 1287
+    },
+    {
+      "cell": "atr-volatility-breakout / XAUUSD.r / M15 / 2025-01-01..2026-01-01",
+      "sharpe_per_trade": -0.05035827365453085,
+      "trades": 193
+    },
+    {
+      "cell": "atr-volatility-breakout / GBPUSD.r / H1 / 2025-01-01..2026-01-01",
+      "sharpe_per_trade": 0.051822944720689205,
+      "trades": 174
+    },
+    {
+      "cell": "atr-volatility-breakout / USDJPY.r / M5 / 2025-01-01..2026-01-01",
+      "sharpe_per_trade": -0.056745997696401464,
+      "trades": 1335
+    },
+    {
+      "cell": "atr-volatility-breakout / USDJPY.r / H1 / 2025-01-01..2026-01-01",
+      "sharpe_per_trade": -0.02367002052863318,
+      "trades": 179
+    }
+  ]
+}

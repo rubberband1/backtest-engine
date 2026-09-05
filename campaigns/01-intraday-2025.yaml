@@ -1,0 +1,43 @@
+# First half of the cumulative campaign: ten classic strategies over ten
+# instruments on the intraday timeframes, over the year the M1 cache covers
+# in full.
+#
+# Its 300 cells are carried into the second half through `prior_report`, so
+# the multiple-testing correction there counts 600 attempts rather than
+# restarting at 300. The two halves are one search; they were run in two
+# sittings, which is a fact about the operator and not about the statistics.
+strategies:
+  - strategies/ma-crossover.json
+  - strategies/rsi-mean-reversion.json
+  - strategies/bollinger-breakout.json
+  - strategies/bollinger-mean-reversion.json
+  - strategies/macd-signal.json
+  - strategies/donchian-breakout.json
+  - strategies/stochastic-reversal.json
+  - strategies/roc-momentum.json
+  - strategies/ema-trend-filter.json
+  - strategies/atr-volatility-breakout.json
+
+symbols:
+  - XAUUSD.r
+  - XAGUSD.r
+  - XAUEUR.r
+  - EURUSD.r
+  - GBPUSD.r
+  - USDJPY.r
+  - AUDUSD.r
+  - USDCAD.r
+  - XTIUSD
+  - XBRUSD
+
+timeframes: [M5, M15, H1]
+
+start: 2025-01-01
+end: 2026-01-01
+
+initial_equity: 100
+spread_mode: per_bar
+commission_per_lot_per_side: 0
+
+min_trades: 30
+permutation_iterations: 200

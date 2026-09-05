@@ -1,0 +1,49 @@
+# Phase 6 campaign: the same ten strategies and ten instruments, on the
+# timeframes the tradability table admits and the deep history now covers.
+#
+# Not M5 or M15: stage zero refuses seven of those twenty cells outright, and
+# none of these strategies was designed on a five-minute chart.
+#
+# The period starts in 2020: before that only EURUSD.r returns bars, and the
+# depth report flags them as older than the feed itself. Testing one
+# instrument on twenty-one years of imported history and the other nine on
+# five would not be one campaign.
+strategies:
+  - strategies/ma-crossover.json
+  - strategies/rsi-mean-reversion.json
+  - strategies/bollinger-breakout.json
+  - strategies/bollinger-mean-reversion.json
+  - strategies/macd-signal.json
+  - strategies/donchian-breakout.json
+  - strategies/stochastic-reversal.json
+  - strategies/roc-momentum.json
+  - strategies/ema-trend-filter.json
+  - strategies/atr-volatility-breakout.json
+
+symbols:
+  - XAUUSD.r
+  - XAGUSD.r
+  - XAUEUR.r
+  - EURUSD.r
+  - GBPUSD.r
+  - USDJPY.r
+  - AUDUSD.r
+  - USDCAD.r
+  - XTIUSD
+  - XBRUSD
+
+timeframes: [H1, H4, D1]
+
+start: 2020-01-01
+end: 2026-09-04
+
+initial_equity: 100
+# overridden per instrument with its M1-measured median spread; the bar
+# column above M1 is the minimum spread inside the bar, not a fill cost
+spread_mode: per_bar
+commission_per_lot_per_side: 0
+
+min_trades: 30
+permutation_iterations: 200
+
+prior_report: campaigns/01-intraday-2025.report.json

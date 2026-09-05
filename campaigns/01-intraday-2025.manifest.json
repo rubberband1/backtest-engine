@@ -1,0 +1,240 @@
+{
+  "manifest_version": 2,
+  "created_at": "2026-09-05T13:18:43.380811+00:00",
+  "engine_version": "5.0.0",
+  "note": null,
+  "strategies": [
+    "strategies/ma-crossover.json",
+    "strategies/rsi-mean-reversion.json",
+    "strategies/bollinger-breakout.json",
+    "strategies/bollinger-mean-reversion.json",
+    "strategies/macd-signal.json",
+    "strategies/donchian-breakout.json",
+    "strategies/stochastic-reversal.json",
+    "strategies/roc-momentum.json",
+    "strategies/ema-trend-filter.json",
+    "strategies/atr-volatility-breakout.json"
+  ],
+  "symbols": [
+    "XAUUSD.r",
+    "XAGUSD.r",
+    "XAUEUR.r",
+    "EURUSD.r",
+    "GBPUSD.r",
+    "USDJPY.r",
+    "AUDUSD.r",
+    "USDCAD.r",
+    "XTIUSD",
+    "XBRUSD"
+  ],
+  "timeframes": [
+    "M5",
+    "M15",
+    "H1"
+  ],
+  "config": {
+    "symbol": "XAUUSD.r",
+    "timeframe": "M5",
+    "start": "2025-01-01T00:00:00+00:00",
+    "end": "2026-01-01T00:00:00+00:00",
+    "initial_equity": 100.0,
+    "spread_mode": "per_bar",
+    "spread_value": null,
+    "commission_per_lot_per_side": 0.0,
+    "swap_mode": "points",
+    "session_threshold": 0.5,
+    "per_bar_spread_quantile": 0.5
+  },
+  "server_timezone": "Europe/Athens",
+  "symbol_specs": {
+    "XAUUSD.r": {
+      "read_at": "2026-09-05T12:04:32.793093+00:00",
+      "spec": {
+        "name": "XAUUSD.r",
+        "point": 0.01,
+        "digits": 2,
+        "contract_size": 100.0,
+        "tick_value": 0.8605111436193099,
+        "tick_size": 0.01,
+        "volume_min": 0.01,
+        "volume_max": 20.0,
+        "volume_step": 0.01,
+        "swap_long": -63.88,
+        "swap_short": 39.45,
+        "currency_profit": "USD",
+        "trade_mode": "full"
+      }
+    },
+    "XAGUSD.r": {
+      "read_at": "2026-09-05T12:04:32.793093+00:00",
+      "spec": {
+        "name": "XAGUSD.r",
+        "point": 0.001,
+        "digits": 3,
+        "contract_size": 5000.0,
+        "tick_value": 4.302555718096549,
+        "tick_size": 0.001,
+        "volume_min": 0.01,
+        "volume_max": 20.0,
+        "volume_step": 0.01,
+        "swap_long": -11.27,
+        "swap_short": 4.83,
+        "currency_profit": "USD",
+        "trade_mode": "full"
+      }
+    },
+    "XAUEUR.r": {
+      "read_at": "2026-09-05T12:04:32.793093+00:00",
+      "spec": {
+        "name": "XAUEUR.r",
+        "point": 0.01,
+        "digits": 2,
+        "contract_size": 100.0,
+        "tick_value": 1.0,
+        "tick_size": 0.01,
+        "volume_min": 0.01,
+        "volume_max": 20.0,
+        "volume_step": 0.01,
+        "swap_long": -35.57,
+        "swap_short": 14.54,
+        "currency_profit": "EUR",
+        "trade_mode": "full"
+      }
+    },
+    "EURUSD.r": {
+      "read_at": "2026-09-05T12:04:32.793093+00:00",
+      "spec": {
+        "name": "EURUSD.r",
+        "point": 1e-05,
+        "digits": 5,
+        "contract_size": 100000.0,
+        "tick_value": 0.8605481691837701,
+        "tick_size": 1e-05,
+        "volume_min": 0.01,
+        "volume_max": 50.0,
+        "volume_step": 0.01,
+        "swap_long": -6.47,
+        "swap_short": 2.83,
+        "currency_profit": "USD",
+        "trade_mode": "full"
+      }
+    },
+    "GBPUSD.r": {
+      "read_at": "2026-09-05T12:04:32.793093+00:00",
+      "spec": {
+        "name": "GBPUSD.r",
+        "point": 1e-05,
+        "digits": 5,
+        "contract_size": 100000.0,
+        "tick_value": 0.8605481691837701,
+        "tick_size": 1e-05,
+        "volume_min": 0.01,
+        "volume_max": 50.0,
+        "volume_step": 0.01,
+        "swap_long": -2.22,
+        "swap_short": -2.02,
+        "currency_profit": "USD",
+        "trade_mode": "full"
+      }
+    },
+    "USDJPY.r": {
+      "read_at": "2026-09-05T12:04:32.793093+00:00",
+      "spec": {
+        "name": "USDJPY.r",
+        "point": 0.001,
+        "digits": 3,
+        "contract_size": 100000.0,
+        "tick_value": 0.5505031598881378,
+        "tick_size": 0.001,
+        "volume_min": 0.01,
+        "volume_max": 50.0,
+        "volume_step": 0.01,
+        "swap_long": 9.37,
+        "swap_short": -14.84,
+        "currency_profit": "JPY",
+        "trade_mode": "full"
+      }
+    },
+    "AUDUSD.r": {
+      "read_at": "2026-09-05T12:04:32.793093+00:00",
+      "spec": {
+        "name": "AUDUSD.r",
+        "point": 1e-05,
+        "digits": 5,
+        "contract_size": 100000.0,
+        "tick_value": 0.8605481691837701,
+        "tick_size": 1e-05,
+        "volume_min": 0.01,
+        "volume_max": 50.0,
+        "volume_step": 0.01,
+        "swap_long": -0.69,
+        "swap_short": -2.39,
+        "currency_profit": "USD",
+        "trade_mode": "full"
+      }
+    },
+    "USDCAD.r": {
+      "read_at": "2026-09-05T12:04:32.793093+00:00",
+      "spec": {
+        "name": "USDCAD.r",
+        "point": 1e-05,
+        "digits": 5,
+        "contract_size": 100000.0,
+        "tick_value": 0.6210370075952827,
+        "tick_size": 1e-05,
+        "volume_min": 0.01,
+        "volume_max": 50.0,
+        "volume_step": 0.01,
+        "swap_long": 2.68,
+        "swap_short": -8.22,
+        "currency_profit": "CAD",
+        "trade_mode": "full"
+      }
+    },
+    "XTIUSD": {
+      "read_at": "2026-09-05T12:04:32.793093+00:00",
+      "spec": {
+        "name": "XTIUSD",
+        "point": 0.001,
+        "digits": 3,
+        "contract_size": 1000.0,
+        "tick_value": 0.8605111436193099,
+        "tick_size": 0.001,
+        "volume_min": 0.01,
+        "volume_max": 20.0,
+        "volume_step": 0.01,
+        "swap_long": -0.7,
+        "swap_short": -0.7,
+        "currency_profit": "USD",
+        "trade_mode": "full"
+      }
+    },
+    "XBRUSD": {
+      "read_at": "2026-09-05T12:04:32.793093+00:00",
+      "spec": {
+        "name": "XBRUSD",
+        "point": 0.001,
+        "digits": 3,
+        "contract_size": 1000.0,
+        "tick_value": 0.8605111436193099,
+        "tick_size": 0.001,
+        "volume_min": 0.01,
+        "volume_max": 20.0,
+        "volume_step": 0.01,
+        "swap_long": 41.8,
+        "swap_short": -171.7,
+        "currency_profit": "USD",
+        "trade_mode": "full"
+      }
+    }
+  },
+  "min_trades": 30,
+  "permutation_iterations": 200,
+  "alpha": 0.05,
+  "confidence": 0.95,
+  "max_spread_atr": 0.15,
+  "gate_alteration_threshold": 0.2,
+  "check_tradability": true,
+  "prior_attempts": 0,
+  "prior_results": []
+}
