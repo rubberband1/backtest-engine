@@ -48,7 +48,7 @@ from core.runs.store import RunConfig, symbol_spec_cost_hash
 from core.serialization import json_safe
 from core.version import ENGINE_VERSION
 
-MANIFEST_VERSION = 1
+MANIFEST_VERSION = 2
 
 
 class ManifestError(RuntimeError):
@@ -75,7 +75,11 @@ class CampaignManifest:
     gate_alteration_threshold: float
     check_tradability: bool = True
     prior_attempts: int = 0
-    prior_sharpes: list[float] = field(default_factory=list)
+    # the cells earlier campaigns on this search produced, each with the
+    # trade count that makes its Sharpe an estimate rather than a ratio. The
+    # correction needs both: the count sets N, the results set the maximum
+    # that N has to explain.
+    prior_results: list[dict[str, Any]] = field(default_factory=list)
     manifest_version: int = MANIFEST_VERSION
     note: str | None = None
 
@@ -98,7 +102,7 @@ class CampaignManifest:
         gate_alteration_threshold: float,
         check_tradability: bool = True,
         prior_attempts: int = 0,
-        prior_sharpes: list[float] | None = None,
+        prior_results: list[dict[str, Any]] | None = None,
         note: str | None = None,
     ) -> CampaignManifest:
         """Reads every instrument spec now, and records when that was.
@@ -118,7 +122,10 @@ class CampaignManifest:
         return cls(
             created_at=datetime.now(timezone.utc),
             engine_version=ENGINE_VERSION,
-            strategies=[str(path) for path in strategies],
+            # posix separators: a manifest is meant to be committed and
+            # re-run, and `strategies\ma-crossover.json` is not a path on the
+            # machine that clones it
+            strategies=[Path(path).as_posix() for path in strategies],
             symbols=list(symbols),
             timeframes=list(timeframes),
             config=config.to_dict(),
@@ -132,7 +139,7 @@ class CampaignManifest:
             gate_alteration_threshold=gate_alteration_threshold,
             check_tradability=check_tradability,
             prior_attempts=prior_attempts,
-            prior_sharpes=list(prior_sharpes or []),
+            prior_results=list(prior_results or []),
             note=note,
         )
 
@@ -159,7 +166,7 @@ class CampaignManifest:
                 "gate_alteration_threshold": self.gate_alteration_threshold,
                 "check_tradability": self.check_tradability,
                 "prior_attempts": self.prior_attempts,
-                "prior_sharpes": self.prior_sharpes,
+                "prior_results": self.prior_results,
             }
         )
 
@@ -200,7 +207,7 @@ class CampaignManifest:
             gate_alteration_threshold=float(payload["gate_alteration_threshold"]),
             check_tradability=bool(payload.get("check_tradability", True)),
             prior_attempts=int(payload.get("prior_attempts", 0)),
-            prior_sharpes=list(payload.get("prior_sharpes") or []),
+            prior_results=list(payload.get("prior_results") or []),
         )
 
     @classmethod

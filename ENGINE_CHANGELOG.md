@@ -18,6 +18,44 @@ the reference after an intentional change:
 python -m scripts.update_golden --update-golden --note "reason"
 ```
 
+## 4.2.0
+
+Phase 9: the campaign in the README re-run under a manifest and committed, so
+the claim it rests on can be checked by anyone who clones the repository.
+**MINOR: no run results change** — both golden references reproduce unchanged.
+What changes is a campaign-level number, and it changes because it was wrong.
+
+### The best result of a search run in two sittings
+
+`_panel` counted every attempt of the search — this campaign's cells plus
+those carried over from the earlier one — and then took the maximum over this
+campaign's cells alone. So the correction was computed for 530 attempts and
+applied to the best of 300 of them.
+
+It never flattered anything: the reported maximum was *lower* than the search
+had actually produced, which makes the verdict look better-earned than it was
+and the reported best cell an artifact of where the operator stopped for the
+night. On the campaign in the README it reported `rsi-mean-reversion /
+AUDUSD.r / H4` at `+0.1990`, while the first half of the same search held
+`ma-crossover / XTIUSD / H1` at `+0.3307`.
+
+- a campaign carries earlier cells as results, not as bare Sharpes: the trade
+  count travels with each one because `required_sharpe_per_trade` divides by
+  it, and a winner scored against a threshold computed for another cell's
+  sample size is two numbers, not a comparison
+- `CampaignManifest.prior_sharpes` becomes `prior_results`, and the manifest
+  version goes to 2. A version-1 manifest is refused rather than read with the
+  field missing, which would silently drop every carried result
+- two tests pin it: a carried cell can win the search, and the threshold
+  follows the winner's own trade count
+
+### The authoritative campaign
+
+- `campaigns/` holds the two halves of the cumulative campaign: the YAML, the
+  frozen manifest, the JSON report and the table, for both
+- both reproduce under `scripts/verify_campaign.py`, every compared field, at
+  a tolerance of 1e-9
+
 ## 4.1.0
 
 Phase 8: the repository made runnable without a broker, the live-versus-backtest

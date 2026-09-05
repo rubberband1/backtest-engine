@@ -95,6 +95,22 @@ logger = logging.getLogger(__name__)
 
 Stage = str  # "tradability" | "gate" | "backtest" | "permutation"
 
+
+@dataclass(frozen=True)
+class Candidate:
+    """One cell that produced a Sharpe worth comparing, whichever campaign ran it.
+
+    The correction counts every attempt of the search, so the maximum it is
+    correcting has to be drawn from the same search. Reading it off this
+    campaign's cells alone makes the best result depend on where the operator
+    stopped for the night, and reports a smaller maximum than the search
+    actually produced.
+    """
+
+    label: str
+    sharpe_per_trade: float
+    trades: int
+
 # Below this many trades a backtest has no power whatever its equity curve
 # says, and a permutation on it would only measure the small sample.
 DEFAULT_MIN_TRADES = 30
@@ -631,8 +647,9 @@ def _panel(
     alpha: float,
     confidence: float,
     prior_attempts: int = 0,
-    prior_sharpes: Sequence[float] = (),
+    prior_results: Sequence[dict[str, Any]] = (),
     min_trades: int = DEFAULT_MIN_TRADES,
+    period: str | None = None,
 ) -> TrialPanel:
     """The campaign-wide correction, over every attempt that was made.
 
@@ -640,10 +657,13 @@ def _panel(
     for being untradable was never an experiment, and adding it to N would
     make the correction look stricter while measuring nothing.
 
-    `prior_attempts` and `prior_sharpes` carry earlier campaigns on the same
+    `prior_attempts` and `prior_results` carry earlier campaigns on the same
     search. The research is one search whether or not it was run in one
     session, and a correction that resets every time the process restarts is
-    not a correction.
+    not a correction. The carried cells are candidates for the best result as
+    well as observations of its spread: a maximum taken over half of a search
+    while the threshold is computed for all of it compares two different
+    numbers.
 
     **The variance across trials is estimated only on cells with at least
     `min_trades` trades.** A per-trade Sharpe over two trades is not a small
@@ -661,39 +681,53 @@ def _panel(
     cells = tested
     backtested = [c for c in cells if c.trades is not None]
     permuted = [c for c in cells if c.permutation_p_value is not None]
-    sharpes = [
-        c.sharpe_per_trade
+
+    # the winner is drawn from the same population the variance was estimated
+    # on. Crowning a two-trade cell as the campaign's best result and then
+    # solving for the Sharpe it would need over two observations is not a
+    # strict test of anything; it is arithmetic on noise
+    # the period belongs in the label: pooled across two campaigns, the same
+    # strategy, instrument and timeframe names two different cells, and a
+    # headline result that cannot be traced back to one of them is a string,
+    # not a finding
+    suffix = f" / {period}" if period else ""
+    mine = [
+        Candidate(
+            f"{c.strategy_id} / {c.symbol} / {c.timeframe}{suffix}",
+            float(c.sharpe_per_trade),
+            int(c.trades or 0),
+        )
         for c in backtested
         if c.sharpe_per_trade is not None
         and np.isfinite(c.sharpe_per_trade)
         and (c.trades or 0) >= min_trades
     ]
+    carried = [
+        Candidate(
+            str(r["cell"]), float(r["sharpe_per_trade"]), int(r["trades"])
+        )
+        for r in prior_results
+        if r.get("sharpe_per_trade") is not None
+        and np.isfinite(float(r["sharpe_per_trade"]))
+    ]
+    candidates = [*mine, *carried]
 
     # the spread of the Sharpe across trials is a property of the search, so
     # earlier campaigns on the same search contribute their observations too
-    pooled = [*sharpes, *(s for s in prior_sharpes if np.isfinite(s))]
+    pooled = [c.sharpe_per_trade for c in candidates]
     variance = float(np.var(np.asarray(pooled), ddof=1)) if len(pooled) > 1 else None
-    # the winner is drawn from the same population the variance was estimated
-    # on. Crowning a two-trade cell as the campaign's best result and then
-    # solving for the Sharpe it would need over two observations is not a
-    # strict test of anything; it is arithmetic on noise
-    candidates = [
-        c
-        for c in backtested
-        if c.sharpe_per_trade is not None and (c.trades or 0) >= min_trades
-    ]
-    best = max(candidates, key=lambda c: c.sharpe_per_trade or 0.0, default=None)
+    best = max(candidates, key=lambda c: c.sharpe_per_trade, default=None)
     expected_max = expected_max_sharpe(attempts, variance) if variance else None
     required = (
         required_sharpe_per_trade(
-            attempts, variance, best.trades or 0, confidence=confidence
+            attempts, variance, best.trades, confidence=confidence
         )
         if variance and best is not None
         else None
     )
     clears = (
         bool(best.sharpe_per_trade >= required)
-        if required is not None and best is not None and best.sharpe_per_trade is not None
+        if required is not None and best is not None
         else None
     )
 
@@ -718,15 +752,22 @@ def _panel(
         + f", including the {len(tested) - len(backtested)} stopped at gate zero. "
         f"Cells refused before testing are excluded: they were not experiments",
         f"the spread of the Sharpe across trials is estimated on "
-        f"{len(pooled)} observed Sharpes ({len(sharpes)} from this campaign"
-        + (f", {len(pooled) - len(sharpes)} carried over" if prior_sharpes else "")
+        f"{len(pooled)} observed Sharpes ({len(mine)} from this campaign"
+        + (f", {len(carried)} carried over" if carried else "")
         + f"), only from cells with at least {min_trades} trades - a per-trade "
         f"Sharpe over two trades is a ratio, not an estimate - and assumed to "
         f"hold for the cells that never produced one",
-        f"the best result is taken from the {len(candidates)} cells with at "
-        f"least {min_trades} trades, the same population the spread was "
-        f"estimated on: a cell with fewer trades cannot be a candidate for a "
-        f"finding, whatever its Sharpe reads",
+        f"the best result is taken from the same {len(candidates)} cells the "
+        f"spread was estimated on"
+        + (
+            f", earlier campaigns on this search included: the maximum is over "
+            f"the whole search the {attempts} attempts are counted from, not "
+            f"over this campaign alone"
+            if carried
+            else ""
+        )
+        + f". A cell with fewer than {min_trades} trades cannot be a candidate "
+        f"for a finding, whatever its Sharpe reads",
         "the cells are not independent: the same instrument appears at several "
         "timeframes and the same strategy on ten instruments, so the effective "
         "number of independent trials is smaller than the count and this "
@@ -748,7 +789,7 @@ def _panel(
     else:
         verdict = (
             f"{attempts} attempts. The best cell with at least {min_trades} trades "
-            f"is {best.strategy_id} on {best.symbol} {best.timeframe}, with a "
+            f"is {best.label}, with a "
             f"per-trade Sharpe of {best.sharpe_per_trade:+.4f} over "
             f"{best.trades} trades. After "
             f"{attempts} attempts, a search of this size is expected to reach "
@@ -761,16 +802,14 @@ def _panel(
         attempts=attempts,
         cells_backtested=len(backtested),
         cells_permuted=len(permuted),
-        sharpes_observed=len(sharpes),
+        sharpes_observed=len(pooled),
         variance_across_trials=variance,
         expected_max_sharpe=expected_max,
         required_sharpe_per_trade=required,
         confidence=confidence,
         alpha=alpha,
         bonferroni_threshold=rows[0].bonferroni_threshold if rows else None,
-        best_strategy=(
-            f"{best.strategy_id} / {best.symbol} / {best.timeframe}" if best else None
-        ),
+        best_strategy=best.label if best else None,
         best_sharpe_per_trade=best.sharpe_per_trade if best else None,
         best_clears_required=clears,
         survivors_after_correction=survivors,
@@ -781,6 +820,12 @@ def _panel(
             1 for cell in backtested if (cell.spread_measured_share or 0.0) <= 0.0
         ),
     )
+
+
+def _period_label(start: datetime | None, end: datetime | None) -> str | None:
+    if start is None or end is None:
+        return None
+    return f"{start.date().isoformat()}..{end.date().isoformat()}"
 
 
 def _median_measured_share(cells: Sequence[CellOutcome]) -> float | None:
@@ -833,14 +878,15 @@ def run_screen(
     max_spread_atr: float = DEFAULT_MAX_SPREAD_ATR,
     gate_alteration_threshold: float = WARNING_SHARE,
     prior_attempts: int = 0,
-    prior_sharpes: Sequence[float] = (),
+    prior_results: Sequence[dict[str, Any]] = (),
     manifest: CampaignManifest | None = None,
 ) -> ScreenReport:
     """Runs the whole campaign and returns one reproducible table.
 
-    `prior_attempts` and `prior_sharpes` continue an earlier campaign's trial
+    `prior_attempts` and `prior_results` continue an earlier campaign's trial
     count instead of restarting it: the search is the same search, and the
-    multiple-testing correction has to know how many times it has been run.
+    multiple-testing correction has to know how many times it has been run,
+    and over which results.
 
     `manifest` re-runs a campaign against the instrument specs and settings
     frozen when it first ran, instead of reading them fresh. Without it the
@@ -875,7 +921,7 @@ def run_screen(
         gate_alteration_threshold = manifest.gate_alteration_threshold
         check_tradability = manifest.check_tradability
         prior_attempts = manifest.prior_attempts
-        prior_sharpes = list(manifest.prior_sharpes)
+        prior_results = list(manifest.prior_results)
 
     server_tz = resolver.server_timezone()
 
@@ -894,7 +940,7 @@ def run_screen(
             gate_alteration_threshold=gate_alteration_threshold,
             check_tradability=check_tradability,
             prior_attempts=prior_attempts,
-            prior_sharpes=list(prior_sharpes),
+            prior_results=list(prior_results),
         )
         manifest.apply(resolver)
 
@@ -944,7 +990,13 @@ def run_screen(
             on_cell(index, len(cells), outcome)
 
     panel = _panel(
-        outcomes, alpha, confidence, prior_attempts, prior_sharpes, min_trades
+        outcomes,
+        alpha,
+        confidence,
+        prior_attempts,
+        prior_results,
+        min_trades,
+        period=_period_label(base_config.start, base_config.end),
     )
     warnings: list[str] = []
     failed = [c for c in outcomes if c.status == "error"]

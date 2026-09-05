@@ -108,29 +108,48 @@ def moment(value: Any) -> datetime | None:
     return datetime.fromisoformat(str(value)).replace(tzinfo=timezone.utc)
 
 
-def carry_over(path: Path | None, min_trades: int) -> tuple[int, list[float]]:
-    """Attempts and observed Sharpes from an earlier campaign on this search.
+def carry_over(
+    path: Path | None, min_trades: int
+) -> tuple[int, list[dict[str, Any]]]:
+    """Attempts and results from an earlier campaign on this search.
 
     Only cells that were actually tested are carried: an earlier campaign's
-    refusals were not experiments either. And only Sharpes from cells with
-    enough trades feed the variance, for the same reason they do in this
-    campaign - a per-trade Sharpe over two trades is a ratio, not an estimate.
+    refusals were not experiments either. And only cells with enough trades
+    are carried as results, for the same reason they qualify in this campaign
+    - a per-trade Sharpe over two trades is a ratio, not an estimate.
+
+    The trade count travels with the Sharpe because the corrected threshold
+    depends on it. Carrying the Sharpe alone would let a cell win the search
+    and then be scored against a threshold computed for a different cell's
+    sample size. The period travels with it for the same reason: two halves
+    of one search can hold the same strategy on the same instrument and
+    timeframe over different years, and those are two cells.
     """
     if path is None:
         return 0, []
     payload = json.loads(path.read_text(encoding="utf-8"))
     cells = [c for c in payload.get("cells", []) if c.get("counts_as_attempt", True)]
-    sharpes = [
-        float(c["sharpe_per_trade"])
+    period = ""
+    if payload.get("period_start") and payload.get("period_end"):
+        period = (
+            f" / {str(payload['period_start'])[:10]}"
+            f"..{str(payload['period_end'])[:10]}"
+        )
+    results = [
+        {
+            "cell": f"{c['strategy_id']} / {c['symbol']} / {c['timeframe']}{period}",
+            "sharpe_per_trade": float(c["sharpe_per_trade"]),
+            "trades": int(c["trades"]),
+        }
         for c in cells
         if c.get("sharpe_per_trade") is not None
         and (c.get("trades") or 0) >= min_trades
     ]
     logger.info(
         "carrying over %d attempts and %d observed Sharpes from %s",
-        len(cells), len(sharpes), path,
+        len(cells), len(results), path,
     )
-    return len(cells), sharpes
+    return len(cells), results
 
 
 def _manifest_lines(report: ScreenReport) -> list[str]:
@@ -283,7 +302,7 @@ def main() -> None:
     )
 
     min_trades = int(payload.get("min_trades", 30))
-    prior_attempts, prior_sharpes = carry_over(
+    prior_attempts, prior_results = carry_over(
         args.prior
         or (Path(payload["prior_report"]) if "prior_report" in payload else None),
         min_trades,
@@ -307,7 +326,7 @@ def main() -> None:
         min_trades=min_trades,
         permutation_iterations=int(payload.get("permutation_iterations", 200)),
         prior_attempts=prior_attempts,
-        prior_sharpes=prior_sharpes,
+        prior_results=prior_results,
         manifest=manifest,
     )
 

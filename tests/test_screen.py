@@ -163,3 +163,65 @@ def test_required_sharpe_falls_with_more_observations() -> None:
     few = required_sharpe_per_trade(300, 0.01, observations=40)
     many = required_sharpe_per_trade(300, 0.01, observations=400)
     assert few > many
+
+
+# -- a search run in two sittings is still one search --------------------
+
+
+def test_the_best_result_is_taken_over_the_whole_search() -> None:
+    """A cell carried over from an earlier campaign can still win.
+
+    The correction counts every attempt of the search, so the maximum it
+    corrects has to come from the same search. Taking it from this campaign's
+    cells alone made the reported best depend on where the operator stopped
+    for the night, and understated it whenever the earlier half held the
+    better cell.
+    """
+    carried = [{"cell": "earlier / X / D1", "sharpe_per_trade": 0.33, "trades": 32}]
+    panel = _panel(
+        [_cell(strategy="later", sharpe=0.22, trades=38)]
+        + [_cell(stage="gate") for _ in range(99)],
+        alpha=0.05,
+        confidence=0.95,
+        prior_attempts=230,
+        prior_results=carried,
+    )
+    assert panel.attempts == 330
+    assert panel.best_strategy == "earlier / X / D1"
+    assert panel.best_sharpe_per_trade == pytest.approx(0.33)
+    assert "the maximum is over the whole search" in " ".join(panel.assumptions)
+
+
+def test_a_carried_cell_is_scored_against_its_own_trade_count() -> None:
+    """The threshold follows the winner's sample, not this campaign's.
+
+    `required_sharpe_per_trade` divides by the number of trades behind the
+    observation. Carrying the Sharpe without its trade count would score the
+    winner against a threshold computed for a different cell's sample.
+    """
+    cells = [_cell(strategy="later", sharpe=0.22, trades=38)]
+    few = _panel(
+        cells, alpha=0.05, confidence=0.95, prior_attempts=100,
+        prior_results=[{"cell": "e / X / D1", "sharpe_per_trade": 0.33, "trades": 32}],
+    )
+    many = _panel(
+        cells, alpha=0.05, confidence=0.95, prior_attempts=100,
+        prior_results=[{"cell": "e / X / D1", "sharpe_per_trade": 0.33, "trades": 500}],
+    )
+    assert few.required_sharpe_per_trade > many.required_sharpe_per_trade
+
+
+def test_a_pooled_candidate_is_labelled_with_its_period() -> None:
+    """Two halves of one search can hold the same cell over different years.
+
+    `ma-crossover / XTIUSD / H1` names one cell in a campaign over 2025 and a
+    different one in a campaign over 2020-2026. Without the period the
+    headline result cannot be traced back to the report that produced it.
+    """
+    panel = _panel(
+        [_cell(strategy="ma-crossover", symbol="XTIUSD", sharpe=0.33, trades=32)],
+        alpha=0.05,
+        confidence=0.95,
+        period="2025-01-01..2026-01-01",
+    )
+    assert panel.best_strategy == "ma-crossover / XTIUSD / H1 / 2025-01-01..2026-01-01"
