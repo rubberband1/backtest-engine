@@ -259,3 +259,25 @@ def test_a_null_spread_value_stays_null() -> None:
 
     assert RunConfig(symbol="X", timeframe="M1", spread_value=None).spread_value is None
     assert RunConfig(symbol="X", timeframe="M1", spread_value=2).spread_value == 2.0
+
+
+def test_a_naive_bound_is_read_as_utc() -> None:
+    """`start=2020-01-01` is the most ordinary input the API takes.
+
+    The bars carry a tz-aware UTC index, so a naive bound could not be
+    compared against it and came back from pandas as a TypeError - which the
+    API could only report as an internal error. Every other entry point
+    already read a naive value as UTC; the config does too, so the run_id is
+    the same whichever way the bound arrived.
+    """
+    naive = RunConfig(
+        symbol="X", timeframe="H1",
+        start=datetime(2020, 1, 1), end=datetime(2021, 1, 1),
+    )
+    aware = RunConfig(
+        symbol="X", timeframe="H1",
+        start=datetime(2020, 1, 1, tzinfo=timezone.utc),
+        end=datetime(2021, 1, 1, tzinfo=timezone.utc),
+    )
+    assert naive.start is not None and naive.start.tzinfo is timezone.utc
+    assert naive.to_dict() == aware.to_dict()

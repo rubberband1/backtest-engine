@@ -48,7 +48,7 @@ from core.live.compare import compare as live_compare
 from core.live.journal import Journal
 from core.live.lock import RunLock, process_alive
 from core.paths import project_relative
-from core.research.screen import run_screen
+from core.research.screen import bind_cell, run_screen
 from core.research.tradability import DEFAULT_MAX_SPREAD_ATR
 from core.research.tradability import build_table as build_tradability
 from core.runs.runner import (
@@ -636,7 +636,19 @@ def _run_config(config: s.RunConfigIn) -> RunConfig:
 
 
 def _prepare(request: s.StrategyRef, config: s.RunConfigIn):
-    spec = _resolve_spec(request)
+    """The spec as it will actually be run, against the bars the config names.
+
+    The instrument block of a spec is a default, not the request: the Run page
+    exists to pick a symbol and a timeframe, and the campaign runner has always
+    bound the spec to the cell it executes. This path did not, so a spec
+    written on `XAUUSD.r H1` and run over `AUDUSD.r H4` bars kept reading H1 -
+    and the engine takes the time stop, the spread realism check and the
+    result's own instrument label from the spec, not from the config. The time
+    stop was then out by the ratio of the two timeframes.
+    """
+    spec = bind_cell(
+        _resolve_spec(request), config.symbol, _timeframe(config.timeframe).name
+    )
     run_config = _run_config(config)
     bars = load_bars_for_run(cache, run_config)
     if len(bars) > MAX_BARS:

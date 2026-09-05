@@ -18,6 +18,62 @@ the reference after an intentional change:
 python -m scripts.update_golden --update-golden --note "reason"
 ```
 
+## 5.0.0
+
+Found while re-reading the repository as a stranger would, before publishing
+it. **MAJOR: results change** for one class of request - the golden references
+are unaffected and reproduce unchanged, because on them the change is a no-op.
+
+### The API ignored the instrument the request asked for
+
+`POST /api/backtest`, `/api/edge` and `/api/strategies/preview` load the bars
+named by the request's `config`, and then ran the spec exactly as written -
+including its `instrument` block. So a spec authored on `XAUUSD.r H1` and run
+from the Run page over `AUDUSD.r H4` bars was executed as an H1 strategy on H4
+data.
+
+That is not a labelling problem. The engine takes the timeframe from the spec:
+
+- the **time stop** counts session bars of `strategy.instrument.tf`, so it
+  fired at the wrong horizon - out by the ratio of the two timeframes
+- the **spread realism check** was run for the wrong timeframe
+- the **preview panel** measured its spread reference, and reported its
+  verdict, for the instrument in the file rather than the one requested
+- the stored run's `spec.json` named an instrument it had not traded
+
+The campaign runner never had this defect: `bind_cell` has bound the spec to
+the cell since the screening funnel was written, and its docstring says why in
+as many words. The API path simply never called it. Every number in
+`campaigns/` is unaffected.
+
+- `_prepare` binds the resolved spec to the config's symbol and timeframe
+- a test asserts the stored run's instrument is the one the request named, and
+  fails against the previous behaviour
+
+### A naive date bound returned 500
+
+`start=2020-01-01` - the most ordinary input the API takes - reached pandas as
+a naive Timestamp against a tz-aware index and came back as a `TypeError`, so
+the endpoint answered "internal error" to a valid request. `RunConfig` now
+reads a naive bound as UTC, which is what the YAML runner already did, so the
+run_id is the same whichever way the bound arrived.
+
+### Hygiene before publication
+
+- `/api/health` reported absolute paths for the cache, runs, strategies and
+  live directories. On a project cloned inside a home directory that puts the
+  account name into every screenshot of the dashboard. `core/paths.py` renders
+  a directory relative to the project root, or as `external`, and the API, the
+  startup banner and the fixture warning all use it. A test asserts no field of
+  `/api/health` is an absolute path
+- swept every GET endpoint and the error paths of the POST ones: no absolute
+  path, hostname or account name in any response body, and no stack trace -
+  an unhandled error leaves as `internal error (TypeError)` with the detail in
+  the server log
+- the live diary, the run artefacts and the campaign reports carry no absolute
+  paths either; manifests now record strategy paths with posix separators, so
+  a committed campaign can be re-run on a machine that is not Windows
+
 ## 4.2.0
 
 Phase 9: the campaign in the README re-run under a manifest and committed, so

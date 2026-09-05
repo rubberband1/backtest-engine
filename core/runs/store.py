@@ -96,6 +96,15 @@ class RunConfig:
             value = getattr(self, name)
             if value is not None:
                 object.__setattr__(self, name, float(value))
+        # The bars carry a tz-aware UTC index, so a naive bound cannot be
+        # compared against it: it used to reach pandas and come back as a
+        # TypeError, which the API could only report as an internal error on
+        # the most ordinary input there is, `start=2020-01-01`. A naive value
+        # is read as UTC, which is what every other entry point already did.
+        for name in ("start", "end"):
+            value = getattr(self, name)
+            if isinstance(value, datetime) and value.tzinfo is None:
+                object.__setattr__(self, name, value.replace(tzinfo=timezone.utc))
 
     def to_dict(self) -> dict[str, Any]:
         return json_safe(asdict(self))

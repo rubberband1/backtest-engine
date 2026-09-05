@@ -956,3 +956,33 @@ def test_a_run_launched_from_the_editor_is_counted_like_any_other(
 
     listed = {item["run_id"] for item in client.get("/api/runs").json()}
     assert run_id in listed
+
+
+def test_the_run_uses_the_instrument_the_request_asked_for(
+    client: TestClient,
+) -> None:
+    """The Run page exists to pick a symbol and a timeframe.
+
+    The engine reads the timeframe from the spec's instrument block - it is
+    what counts session bars for the time stop - so a spec written on one
+    timeframe and executed over another applied a time stop out by the ratio
+    of the two, and labelled the result with the instrument in the file rather
+    than the one in the request. The campaign runner has always bound the spec
+    to the cell it runs; this path did not.
+    """
+    spec = dict(SPEC)
+    spec["instrument"] = {"symbol": OTHER_SYMBOL, "timeframe": "M15"}
+    payload = {
+        "spec": spec,
+        "config": {
+            "symbol": SYMBOL,
+            "timeframe": "M1",
+            "initial_equity": 100,
+            "spread_mode": "fixed",
+            "spread_value": 1,
+        },
+    }
+    started = client.post("/api/backtest", json=payload)
+    assert started.status_code == 200, started.text
+    run = client.get(f"/api/runs/{started.json()['run_id']}").json()
+    assert run["spec"]["instrument"] == {"symbol": SYMBOL, "timeframe": "M1"}
