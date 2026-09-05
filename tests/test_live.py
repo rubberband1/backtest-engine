@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
@@ -20,7 +21,7 @@ from core.live.broker import (
 )
 from core.live.compare import compare
 from core.live.journal import Journal, scrub
-from core.live.lock import LockHeld, RunLock
+from core.live.lock import LockHeld, RunLock, process_alive
 from core.live.replay import ReplayBroker, replay
 from core.live.runner import LiveConfig, LiveRunner, ReconciliationError
 from core.runs.store import symbol_spec_cost_hash
@@ -546,3 +547,31 @@ def _rewrite_started(diary, changes: dict) -> None:
         lines[index] = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
         break
     diary.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+# -- is that pid still running? ------------------------------------------
+
+
+def test_this_process_is_alive():
+    assert process_alive(os.getpid()) is True
+
+
+def test_a_pid_that_cannot_exist_is_not_alive():
+    assert process_alive(999_999_999) is False
+    assert process_alive(0) is False
+    assert process_alive(-1) is False
+
+
+def test_a_process_the_os_will_not_open_still_counts_as_alive():
+    """Windows pid 4, the System process, is the case this covers.
+
+    `os.kill(4, 0)` there does not raise a clean OSError: CPython cannot
+    convert what the call returns and raises SystemError instead, which used
+    to escape this function. A diary whose lock named such a pid took the live
+    endpoint down with a 500, and made the desktop shell's "a runner is still
+    trading" check answer "no runners" instead of asking again. Existing but
+    unopenable is the same answer a permission error already gets.
+    """
+    if sys.platform != "win32":
+        pytest.skip("the SystemError only comes out of the Windows os.kill")
+    assert process_alive(4) is True

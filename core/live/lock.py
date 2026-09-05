@@ -48,6 +48,15 @@ def process_alive(pid: int) -> bool:
         return True
     except OSError as exc:  # Windows raises OSError(errno=EINVAL) for dead pids
         return getattr(exc, "winerror", None) not in (87, 6)
+    except SystemError:
+        # Windows, asked about a process it will not open at all - pid 4, the
+        # System process, is the one that does this. CPython cannot turn that
+        # into a clean OSError and raises here instead, which used to escape
+        # this function entirely: a diary whose lock named such a pid took the
+        # live endpoint down with a 500 rather than answering the question.
+        # The process exists; not being allowed to look at it is the same
+        # answer PermissionError already gets.
+        return True
     return True
 
 
