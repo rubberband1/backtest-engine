@@ -3,8 +3,10 @@ from __future__ import annotations
 
 import importlib
 import json
+import re
 import time
 from collections.abc import Iterator
+from pathlib import PurePath
 from typing import Any
 
 import numpy as np
@@ -118,6 +120,20 @@ def run_backtest(client: TestClient, **overrides: Any) -> dict[str, Any]:
 def test_health(client: TestClient) -> None:
     payload = client.get("/api/health").json()
     assert payload["status"] == "ok"
+
+
+def test_health_names_no_absolute_path(client: TestClient) -> None:
+    """The dashboard is screenshotted; the operator's home directory is not.
+
+    A project cloned under a home directory would otherwise put the account
+    name on screen through this endpoint.
+    """
+    payload = client.get("/api/health").json()
+    for field in ("cache_dir", "runs_dir", "strategies_dir", "live_dir"):
+        value = payload[field]
+        assert not PurePath(value).is_absolute(), f"{field} is absolute: {value}"
+        assert not re.match(r"^[A-Za-z]:", value), f"{field} is absolute: {value}"
+        assert "\\" not in value, f"{field} is not posix: {value}"
 
 
 def test_symbols_always_include_those_with_data(client: TestClient) -> None:

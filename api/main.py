@@ -47,6 +47,7 @@ from core.engine.costs import AggregatedSpreadRefused
 from core.live.compare import compare as live_compare
 from core.live.journal import Journal
 from core.live.lock import RunLock, process_alive
+from core.paths import project_relative
 from core.research.screen import run_screen
 from core.research.tradability import DEFAULT_MAX_SPREAD_ATR
 from core.research.tradability import build_table as build_tradability
@@ -118,12 +119,17 @@ _jobs: dict[str, Future] = {}
 async def lifespan(app: FastAPI):
     global _executor
     _executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="backtest")
-    logger.info("cache=%s runs=%s strategies=%s", CACHE_DIR, RUNS_DIR, STRATEGIES_DIR)
+    logger.info(
+        "cache=%s runs=%s strategies=%s",
+        project_relative(CACHE_DIR),
+        project_relative(RUNS_DIR),
+        project_relative(STRATEGIES_DIR),
+    )
     if IS_FIXTURE:
         logger.warning(
             "serving the SYNTHETIC FIXTURE from %s: the bars are invented and "
             "every number measured on them describes a random number "
-            "generator, not a market", CACHE_DIR,
+            "generator, not a market", project_relative(CACHE_DIR),
         )
     yield
     _executor.shutdown(wait=False, cancel_futures=True)
@@ -1782,9 +1788,9 @@ def health() -> dict[str, Any]:
         "engine_version": ENGINE_VERSION,
         # the UI banners on this: invented data has to announce itself
         "synthetic_fixture": IS_FIXTURE,
-        "cache_dir": str(CACHE_DIR.resolve()),
-        "runs_dir": str(RUNS_DIR.resolve()),
-        "strategies_dir": str(STRATEGIES_DIR.resolve()),
-        "live_dir": str(LIVE_DIR.resolve()),
+        "cache_dir": project_relative(CACHE_DIR),
+        "runs_dir": project_relative(RUNS_DIR),
+        "strategies_dir": project_relative(STRATEGIES_DIR),
+        "live_dir": project_relative(LIVE_DIR),
         "runs": len(store.list_runs(limit=500)),
     }

@@ -170,13 +170,16 @@ def announce_data_source(force_fixture: bool) -> None:
     place they can be told.
     """
     from core.data.fixture_provider import FIXTURE_CACHE, resolve_cache_dir
+    from core.paths import project_relative
 
     if force_fixture:
         os.environ["BACKTEST_CACHE_DIR"] = str(FIXTURE_CACHE)
     target, is_fixture = resolve_cache_dir(os.environ.get("BACKTEST_CACHE_DIR"))
     if is_fixture:
         logger.warning("=" * 68)
-        logger.warning("SYNTHETIC DATA: serving the fixture in %s", target)
+        logger.warning(
+            "SYNTHETIC DATA: serving the fixture in %s", project_relative(target)
+        )
         logger.warning("The bars are invented. Every metric measured on them")
         logger.warning("describes a random number generator, not a market.")
         logger.warning("Download real bars with examples/download_year.py.")
@@ -185,10 +188,10 @@ def announce_data_source(force_fixture: bool) -> None:
         logger.error(
             "no data at %s and no fixture at %s: run "
             "`python -m scripts.make_fixture` or download real bars",
-            target, FIXTURE_CACHE,
+            project_relative(target), project_relative(FIXTURE_CACHE),
         )
     else:
-        logger.info("serving real bars from %s", target)
+        logger.info("serving real bars from %s", project_relative(target))
 
 
 def main() -> int:
