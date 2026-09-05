@@ -2,9 +2,12 @@
 # instruments on the intraday timeframes, over the year the M1 cache covers
 # in full.
 #
-# Its 300 cells are carried into the second half through `prior_report`, so
-# the multiple-testing correction there counts 600 attempts rather than
-# restarting at 300. The two halves are one search; they were run in two
+# Of its 300 cells, stage zero refuses 70 before anything is tested on them,
+# which leaves 230 attempts, and 48 of those reach a backtest and produce a
+# result. Both counts travel into the second half through `prior_report`, so
+# the multiple-testing correction there is computed for 530 attempts rather
+# than restarting at 300, and its maximum is taken over those 48 results as
+# well as its own. The two halves are one search; they were run in two
 # sittings, which is a fact about the operator and not about the statistics.
 strategies:
   - strategies/ma-crossover.json

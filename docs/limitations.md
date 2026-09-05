@@ -112,9 +112,9 @@ every run, every campaign cell and the campaign panel:
 | instrument / timeframe | bars with an M1 sample behind them |
 |---|---|
 | XTIUSD H1 (2025) | 74.9% (4,417 of 5,897) |
-| AUDUSD.r H4 | **0.0%** (0 of 8,214) |
-| XAUUSD.r H1 | 11.5% (4,436 of 38,510) |
-| EURUSD.r H1 | 2.4% (4,167 of 171,813) |
+| AUDUSD.r H4 (2020-2026) | **0.0%** (0 of 8,214) |
+| XAUUSD.r H1 (2020-2026) | 11.5% (4,436 of 38,510) |
+| EURUSD.r H1 (2020-2026) | 10.0% (4,167 of 41,530) |
 
 Of the 101 cells in the committed campaign that produced a Sharpe over at
 least 30 trades, **33 were charged a spread with no M1 sample behind a single
@@ -245,9 +245,13 @@ was reported rather than absorbed.
 
 What this does **not** cover:
 
-- **Campaigns run before the manifest existed**, which is all of the ones
-  whose numbers are quoted here. Their cells were executed against whatever
-  the broker was quoting at the time, and they cannot be reproduced exactly.
+- **Campaigns run before the manifest existed.** The committed campaign is
+  not one of them: both halves carry a manifest, and `verify_campaign.py`
+  re-runs each from it and matches every compared field of every cell. The
+  earlier campaigns the changelog compares against have no manifest - their
+  cells were executed against whatever the broker was quoting at the time,
+  they cannot be reproduced exactly, and that is why they are not in the
+  repository.
 - **The bars.** A manifest deliberately does not freeze six years of price
   data. A broker that rewrites a candle changes the result, and that shows up
   as a changed data fingerprint on the run rather than as a matching one.

@@ -9,7 +9,10 @@ record anyone can read.
 **The strategy under test has no edge and is not expected to make money.**
 `rsi-mean-reversion` on `AUDUSD.r` H4 is the fourth cell of a 530-attempt
 search at +0.1990 Sharpe per trade, against the +0.6254 that search's size
-demands. It is here because it trades often enough to produce a record —
+demands. That +0.1990 is itself charged an assumed cost: the cache holds no
+M1 bars behind `AUDUSD.r` H4 over this period, so the spread was a constant
+measured later and applied backwards to **all 8,214** of its bars, not one of
+them measured. It is here because it trades often enough to produce a record —
 roughly 172 trades over five and a half years, so a handful a month — and
 because a forward test of a strategy chosen for its results would be a test of
 nothing. What is under test is the infrastructure.

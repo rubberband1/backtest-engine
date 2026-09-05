@@ -105,8 +105,8 @@ Getting to an honest "no" takes more machinery than getting to a hopeful
   and every campaign cell now reports the share of its bars that had an M1
   sample behind them, and no result above is quoted without it. Of the 101
   cells that produced a Sharpe worth comparing, **33 had none at all**: the
-  best of them, `rsi-mean-reversion` on `AUDUSD.r` H4 at +0.1990 over 172
-  trades, was charged an assumed cost on all 8,214 of its bars.
+  best of them, `rsi-mean-reversion` on `XTIUSD` D1 at +0.2251 over 38
+  trades, was charged an assumed cost on all 1,685 of its bars.
 - 629 tests, including one that recomputes signals on truncated history to
   prove no rule can see the future, one that demands a dry-run diary compare
   to its own backtest at exactly zero, and one that regenerates the shipped
