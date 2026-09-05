@@ -23,6 +23,7 @@ import pandas as pd
 import pytest
 
 from core.indicators.incremental import bar_view, state_for, supported
+from core.strategy.binding import bind_cell
 
 BARS = 5000
 
@@ -262,13 +263,8 @@ def test_the_runner_agrees_with_itself_on_both_paths() -> None:
         "donchian-breakout",
     ]
     for name in specs:
-        spec = StrategySpec.from_json(f"strategies/{name}.json")
-        spec = spec.model_copy(
-            update={
-                "instrument": spec.instrument.model_copy(
-                    update={"symbol": "SYNTH", "timeframe": "M1"}
-                )
-            }
+        spec = bind_cell(
+            StrategySpec.from_json(f"strategies/{name}.json"), "SYNTH", "M1"
         )
         arms = {}
         original = live_runner._cannot_advance

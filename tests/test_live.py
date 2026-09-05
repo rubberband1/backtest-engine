@@ -24,8 +24,8 @@ from core.live.lock import LockHeld, RunLock
 from core.live.replay import ReplayBroker, replay
 from core.live.runner import LiveConfig, LiveRunner, ReconciliationError
 from core.runs.store import symbol_spec_cost_hash
+from core.strategy.binding import BoundSpec, bind_cell
 from core.strategy.spec import StrategySpec
-from core.validation.walkforward import apply_params
 from core.version import ENGINE_VERSION
 from tests.conftest_engine import random_walk, symbol_spec
 
@@ -42,10 +42,9 @@ def bars(n: int = 400, seed: int = 4) -> pd.DataFrame:
     return frame
 
 
-def bind(name: str = "bollinger-breakout", timeframe: str = "M1") -> StrategySpec:
-    return apply_params(
-        StrategySpec.from_json(f"strategies/{name}.json"),
-        {"instrument.symbol": SYMBOL, "instrument.timeframe": timeframe},
+def bind(name: str = "bollinger-breakout", timeframe: str = "M1") -> BoundSpec:
+    return bind_cell(
+        StrategySpec.from_json(f"strategies/{name}.json"), SYMBOL, timeframe
     )
 
 
@@ -250,7 +249,7 @@ class StubBroker(ReplayBroker):
 
 def runner_with(broker: ReplayBroker, history: pd.DataFrame) -> LiveRunner:
     spec = bind()
-    calendar = SessionCalendar.infer(bars().index, spec.instrument.tf)
+    calendar = SessionCalendar.infer(bars().index, spec.tf)
     return LiveRunner(
         spec,
         symbol_spec(name=SYMBOL),
@@ -423,7 +422,7 @@ def _pinned_backtest(spec, frame, instrument, calendar):
     from core.engine.backtester import BacktestConfig, run_backtest
 
     return run_backtest(
-        spec, frame, instrument, SERVER_TZ,
+        spec.spec, frame, instrument, SERVER_TZ,
         BacktestConfig(initial_equity=100.0, session_calendar=calendar),
     )
 
@@ -438,7 +437,7 @@ def test_a_dry_run_diary_compares_to_its_backtest_at_exactly_zero(tmp_path) -> N
     spec = bind()
     frame = bars(600)
     instrument = symbol_spec(name=SYMBOL)
-    calendar = SessionCalendar.infer(frame.index, spec.instrument.tf, 0.5, SERVER_TZ)
+    calendar = SessionCalendar.infer(frame.index, spec.tf, 0.5, SERVER_TZ)
 
     diary = tmp_path / "diary.jsonl"
     replay(spec, frame, instrument, SERVER_TZ, initial_equity=100.0,
@@ -474,7 +473,7 @@ def test_a_diary_from_another_engine_is_not_comparable(tmp_path) -> None:
     spec = bind()
     frame = bars(600)
     instrument = symbol_spec(name=SYMBOL)
-    calendar = SessionCalendar.infer(frame.index, spec.instrument.tf, 0.5, SERVER_TZ)
+    calendar = SessionCalendar.infer(frame.index, spec.tf, 0.5, SERVER_TZ)
 
     diary = tmp_path / "diary.jsonl"
     replay(spec, frame, instrument, SERVER_TZ, initial_equity=100.0,
@@ -497,7 +496,7 @@ def test_a_drifted_tick_value_is_named_and_not_charged_as_slippage(tmp_path) -> 
     spec = bind()
     frame = bars(600)
     instrument = symbol_spec(name=SYMBOL)
-    calendar = SessionCalendar.infer(frame.index, spec.instrument.tf, 0.5, SERVER_TZ)
+    calendar = SessionCalendar.infer(frame.index, spec.tf, 0.5, SERVER_TZ)
 
     diary = tmp_path / "diary.jsonl"
     replay(spec, frame, instrument, SERVER_TZ, initial_equity=100.0,
@@ -517,7 +516,7 @@ def test_a_diary_that_pinned_no_spec_says_so(tmp_path) -> None:
     spec = bind()
     frame = bars(600)
     instrument = symbol_spec(name=SYMBOL)
-    calendar = SessionCalendar.infer(frame.index, spec.instrument.tf, 0.5, SERVER_TZ)
+    calendar = SessionCalendar.infer(frame.index, spec.tf, 0.5, SERVER_TZ)
 
     diary = tmp_path / "diary.jsonl"
     replay(spec, frame, instrument, SERVER_TZ, initial_equity=100.0,

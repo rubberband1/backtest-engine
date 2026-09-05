@@ -25,8 +25,8 @@ import pytest
 
 from core.engine.costs import CommissionModel, CostModel, SpreadPolicy, SwapModel
 from core.live.replay import compare_replay, diff_trades, replay
+from core.strategy.binding import BoundSpec, bind_cell
 from core.strategy.spec import StrategySpec
-from core.validation.walkforward import apply_params
 from tests.conftest_engine import random_walk, symbol_spec
 
 SERVER_TZ = ZoneInfo("Europe/Athens")
@@ -116,10 +116,9 @@ def variable_spread(n: int = 1000, seed: int = 12) -> pd.DataFrame:
     return bars
 
 
-def bind(name: str, timeframe: str = "M1") -> StrategySpec:
-    return apply_params(
-        StrategySpec.from_json(f"strategies/{name}.json"),
-        {"instrument.symbol": SYMBOL, "instrument.timeframe": timeframe},
+def bind(name: str, timeframe: str = "M1") -> BoundSpec:
+    return bind_cell(
+        StrategySpec.from_json(f"strategies/{name}.json"), SYMBOL, timeframe
     )
 
 
@@ -241,7 +240,7 @@ def test_the_runner_ignores_a_bar_that_is_not_newer() -> None:
 
     spec = bind("bollinger-breakout")
     bars = synthetic(300)
-    calendar = SessionCalendar.infer(bars.index, spec.instrument.tf)
+    calendar = SessionCalendar.infer(bars.index, spec.tf)
     runner = LiveRunner(
         spec, symbol_spec(name=SYMBOL), SERVER_TZ,
         LiveConfig(session_calendar=calendar), broker=ReplayBroker(),
@@ -271,7 +270,7 @@ def test_only_closed_bars_are_offered_to_the_runner() -> None:
     runner = LiveRunner(
         spec, symbol_spec(name=SYMBOL), SERVER_TZ,
         LiveConfig(
-            session_calendar=SessionCalendar.infer(bars.index, spec.instrument.tf)
+            session_calendar=SessionCalendar.infer(bars.index, spec.tf)
         ),
         broker=ReplayBroker(),
     )

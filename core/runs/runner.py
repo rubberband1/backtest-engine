@@ -27,7 +27,7 @@ from core.runs.store import (
     compute_run_id,
     data_fingerprint,
 )
-from core.strategy.spec import StrategySpec
+from core.strategy.binding import BoundSpec
 
 logger = logging.getLogger(__name__)
 
@@ -266,16 +266,17 @@ def load_bars_for_run(cache: ParquetCache, config: RunConfig) -> pd.DataFrame:
 
 
 def plan_run(
-    spec: StrategySpec, config: RunConfig, bars: pd.DataFrame, symbol_spec: SymbolSpec
+    bound: BoundSpec, config: RunConfig, bars: pd.DataFrame, symbol_spec: SymbolSpec
 ) -> tuple[str, str]:
     """run_id and data fingerprint, without executing anything."""
+    bound.must_match(config.symbol, config.timeframe)
     fingerprint = data_fingerprint(bars)
-    return compute_run_id(spec, config, fingerprint, symbol_spec), fingerprint
+    return compute_run_id(bound.spec, config, fingerprint, symbol_spec), fingerprint
 
 
 def execute_run(
     store: RunStore,
-    spec: StrategySpec,
+    bound: BoundSpec,
     config: RunConfig,
     bars: pd.DataFrame,
     symbol_spec: SymbolSpecSnapshot,
@@ -283,6 +284,8 @@ def execute_run(
     run_id: str | None = None,
 ) -> RunMeta:
     """Runs the backtest and persists the run. Raises if anything goes wrong."""
+    bound.must_match(config.symbol, config.timeframe)
+    spec = bound.spec
     fingerprint = data_fingerprint(bars)
     run_id = run_id or compute_run_id(spec, config, fingerprint, symbol_spec.spec)
 
@@ -324,7 +327,7 @@ def execute_run(
 
 
 def run_edge_gate(
-    spec: StrategySpec,
+    bound: BoundSpec,
     config: RunConfig,
     bars: pd.DataFrame,
     symbol_spec: SymbolSpec,
@@ -335,6 +338,8 @@ def run_edge_gate(
     from core.metrics.breakeven import breakeven_prior
     from core.research.edge import DEFAULT_HORIZONS, DEFAULT_MIN_OBSERVATIONS
 
+    bound.must_match(config.symbol, config.timeframe)
+    spec = bound.spec
     costs = config.cost_model()
     report = edge_report(
         spec,

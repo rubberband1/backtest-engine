@@ -40,6 +40,7 @@ from core.runs.runner import (
 )
 from core.runs.store import RunConfig, RunStore
 from core.serialization import json_safe
+from core.strategy.binding import bind_cell
 from core.strategy.spec import StrategySpec
 from core.validation.walkforward import ParameterGrid, apply_params, expand_grid
 
@@ -192,15 +193,7 @@ def _execute_cell(cell: BatchCell) -> CellResult:
         payload["start"] = cell.period.start
         payload["end"] = cell.period.end
         config = RunConfig(**payload)
-        # the instrument block is not decoration: the engine reads the
-        # timeframe from it to count the time stop in session bars, so a cell
-        # run over other bars than the spec declares would silently apply the
-        # wrong holding limit. The symbol is bound too, so the run folder
-        # records which instrument it actually ran on.
-        spec = apply_params(
-            spec,
-            {"instrument.symbol": cell.symbol, "instrument.timeframe": config.timeframe},
-        )
+        bound = bind_cell(spec, cell.symbol, config.timeframe)
 
         cache: ParquetCache = _CONTEXT["cache"]
         store: RunStore = _CONTEXT["store"]
@@ -209,14 +202,14 @@ def _execute_cell(cell: BatchCell) -> CellResult:
         bars = load_bars_for_run(cache, config)
         symbol_spec = resolver.symbol_spec_snapshot(cell.symbol)
         server_tz = resolver.server_timezone()
-        run_id, _ = plan_run(spec, config, bars, symbol_spec.spec)
+        run_id, _ = plan_run(bound, config, bars, symbol_spec.spec)
         result.run_id = run_id
         result.bars = int(len(bars))
 
         if store.exists(run_id) and store.load_meta(run_id).status == "done":
             record = store.load_run(run_id)
         else:
-            execute_run(store, spec, config, bars, symbol_spec, server_tz, run_id)
+            execute_run(store, bound, config, bars, symbol_spec, server_tz, run_id)
             record = store.load_run(run_id)
 
         return _summarize(result, record)

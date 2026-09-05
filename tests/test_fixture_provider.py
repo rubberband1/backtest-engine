@@ -227,20 +227,21 @@ def test_a_backtest_runs_end_to_end_on_the_fixture() -> None:
     from core.engine.backtester import BacktestConfig, run_backtest
     from core.engine.costs import CostModel, SpreadPolicy
     from core.runs.runner import SymbolResolver, load_bars
+    from core.strategy.binding import bind_cell
     from core.strategy.spec import StrategySpec
-    from core.validation.walkforward import apply_params
 
     cache = ParquetCache(FIXTURE_CACHE)
     resolver = SymbolResolver(cache)
     reference = measure_from_cache(cache, "SYNTHGOLD")
     assert reference is not None, "the M1 sample must be there to measure on"
 
-    spec = apply_params(
+    bound = bind_cell(
         StrategySpec.from_json("strategies/rsi-mean-reversion.json"),
-        {"instrument.symbol": "SYNTHGOLD", "instrument.timeframe": "H1"},
+        "SYNTHGOLD",
+        "H1",
     )
     result = run_backtest(
-        spec,
+        bound.spec,
         load_bars(cache, "SYNTHGOLD", Timeframe.H1),
         resolver.symbol_spec("SYNTHGOLD"),
         resolver.server_timezone(),

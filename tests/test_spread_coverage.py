@@ -21,6 +21,7 @@ import pytest
 from core.data.cache import ParquetCache
 from core.data.provider import Timeframe
 from core.data.spread import SpreadCoverage, coverage
+from core.strategy.binding import bind_cell
 
 SYMBOL = "COVER"
 UTC = timezone.utc
@@ -168,7 +169,9 @@ def test_a_run_records_its_spread_coverage(tmp_path) -> None:
         spec=symbol_spec(name=SYMBOL), read_at=datetime(2024, 1, 1, tzinfo=UTC)
     )
     meta = execute_run(
-        store, spec_from(), config, bars, snapshot, ZoneInfo("UTC")
+        store,
+        bind_cell(spec_from(), config.symbol, config.timeframe),
+        config, bars, snapshot, ZoneInfo("UTC"),
     )
 
     stored = (store.load_run(meta.run_id).metrics or {}).get("spread_coverage")

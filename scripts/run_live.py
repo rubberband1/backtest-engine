@@ -56,8 +56,8 @@ from core.engine.costs import CommissionModel, CostModel, SpreadPolicy, SwapMode
 from core.live.broker import DEFAULT_MAGIC, LiveBroker
 from core.live.runner import LiveConfig, LiveRunner, RunnerState
 from core.runs.runner import SymbolResolver
+from core.strategy.binding import bind_cell
 from core.strategy.spec import StrategySpec
-from core.validation.walkforward import apply_params
 
 logger = logging.getLogger("live")
 
@@ -152,22 +152,20 @@ def main() -> int:
     signal.signal(signal.SIGINT, _handle_signal)
 
     spec = StrategySpec.from_json(args.strategy)
-    overrides = {}
-    if args.symbol:
-        overrides["instrument.symbol"] = args.symbol
-    if args.timeframe:
-        overrides["instrument.timeframe"] = args.timeframe
-    if overrides:
-        spec = apply_params(spec, overrides)
+    bound = bind_cell(
+        spec,
+        args.symbol or spec.instrument.symbol,
+        args.timeframe or spec.instrument.timeframe,
+    )
 
-    symbol = spec.instrument.symbol
-    timeframe: Timeframe = spec.instrument.tf
+    symbol = bound.symbol
+    timeframe: Timeframe = bound.tf
     cache = ParquetCache(args.cache_dir)
     resolver = SymbolResolver(cache)
     symbol_spec = resolver.symbol_spec(symbol)
     server_tz = resolver.server_timezone()
 
-    stem = f"{spec.id}-{symbol}-{timeframe.name}".replace("/", "_")
+    stem = f"{bound.spec.id}-{symbol}-{timeframe.name}".replace("/", "_")
     config = LiveConfig(
         initial_equity=args.equity,
         costs=CostModel(
@@ -191,11 +189,11 @@ def main() -> int:
             )
 
         broker = LiveBroker(dry_run=not args.send, magic=args.magic)
-        runner = LiveRunner(spec, symbol_spec, server_tz, config, broker)
+        runner = LiveRunner(bound, symbol_spec, server_tz, config, broker)
         state = runner.start(history)
         logger.info(
             "%s on %s %s: %d bars of history, last %s, %s",
-            spec.id, symbol, timeframe.name, len(history), state.last_bar_time,
+            bound.spec.id, symbol, timeframe.name, len(history), state.last_bar_time,
             "DRY RUN" if state.dry_run else "SENDING ORDERS",
         )
         logger.info("diary: %s", config.journal_path)

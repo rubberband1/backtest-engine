@@ -16,6 +16,7 @@ from core.runs.store import (
     RunStore,
     data_fingerprint,
 )
+from core.strategy.binding import BoundSpec, bind_cell
 from tests.conftest_engine import random_walk, spec_from, symbol_spec, symbol_spec_snapshot
 
 ATHENS = ZoneInfo("Europe/Athens")
@@ -32,17 +33,21 @@ def config(**overrides) -> RunConfig:
     return RunConfig(**base)
 
 
-def run_once(store: RunStore, bars, spec=None, cfg=None):
-    spec = spec or spec_from()
+def bound(spec=None, cfg=None) -> BoundSpec:
     cfg = cfg or config()
-    return execute_run(store, spec, cfg, bars, symbol_spec_snapshot(), ATHENS)
+    return bind_cell(spec or spec_from(), cfg.symbol, cfg.timeframe)
+
+
+def run_once(store: RunStore, bars, spec=None, cfg=None):
+    cfg = cfg or config()
+    return execute_run(store, bound(spec, cfg), cfg, bars, symbol_spec_snapshot(), ATHENS)
 
 
 def test_deterministic_run_id(tmp_path: Path) -> None:
     bars = random_walk(400)
     spec = spec_from()
-    first, fingerprint = plan_run(spec, config(), bars, symbol_spec())
-    second, again = plan_run(spec, config(), bars, symbol_spec())
+    first, fingerprint = plan_run(bound(spec), config(), bars, symbol_spec())
+    second, again = plan_run(bound(spec), config(), bars, symbol_spec())
     assert first == second
     assert fingerprint == again
     assert len(first) == 16
@@ -51,29 +56,29 @@ def test_deterministic_run_id(tmp_path: Path) -> None:
 def test_run_id_changes_with_spec_config_and_data() -> None:
     bars = random_walk(400)
     spec = spec_from()
-    base, _ = plan_run(spec, config(), bars, symbol_spec())
+    base, _ = plan_run(bound(spec), config(), bars, symbol_spec())
 
     other_spec = spec_from(
         exit_block={"stop_loss": {"type": "points", "value": 200},
                     "take_profit": None, "time_stop": None, "signal_exit": None}
     )
-    assert plan_run(other_spec, config(), bars, symbol_spec())[0] != base
-    assert plan_run(spec, config(commission_per_lot_per_side=3.0), bars, symbol_spec())[0] != base
+    assert plan_run(bound(other_spec), config(), bars, symbol_spec())[0] != base
+    assert plan_run(bound(spec), config(commission_per_lot_per_side=3.0), bars, symbol_spec())[0] != base
 
     touched = bars.copy()
     touched.iloc[100, touched.columns.get_loc("close")] += 0.01
-    assert plan_run(spec, config(), touched, symbol_spec())[0] != base
+    assert plan_run(bound(spec), config(), touched, symbol_spec())[0] != base
 
 
 def test_run_id_changes_with_symbol_spec_cost_fields() -> None:
     """A2 drift bug: the broker moving swap/tick_value must move the run_id."""
     bars = random_walk(400)
     spec = spec_from()
-    base, _ = plan_run(spec, config(), bars, symbol_spec())
-    assert plan_run(spec, config(), bars, symbol_spec(tick_value=2.0))[0] != base
-    assert plan_run(spec, config(), bars, symbol_spec(swap_long=-5.0))[0] != base
+    base, _ = plan_run(bound(spec), config(), bars, symbol_spec())
+    assert plan_run(bound(spec), config(), bars, symbol_spec(tick_value=2.0))[0] != base
+    assert plan_run(bound(spec), config(), bars, symbol_spec(swap_long=-5.0))[0] != base
     # a descriptive-only change (name) must NOT change the run_id
-    assert plan_run(spec, config(), bars, symbol_spec(name="OTHER"))[0] == base
+    assert plan_run(bound(spec), config(), bars, symbol_spec(name="OTHER"))[0] == base
 
 
 def test_data_fingerprint_reacts_to_a_single_candle() -> None:
@@ -106,7 +111,7 @@ def test_saving_writes_every_file(tmp_path: Path) -> None:
 def test_run_registers_its_symbol_spec_snapshot(tmp_path: Path) -> None:
     store = RunStore(tmp_path)
     snapshot = symbol_spec_snapshot(tick_value=0.77)
-    meta = execute_run(store, spec_from(), config(), random_walk(300), snapshot, ATHENS)
+    meta = execute_run(store, bound(), config(), random_walk(300), snapshot, ATHENS)
 
     record = store.load_run(meta.run_id)
     assert record.symbol_spec_registered is True
@@ -158,7 +163,7 @@ def test_identical_run_is_reused(tmp_path: Path) -> None:
     first = run_once(store, bars)
     assert store.exists(first.run_id)
 
-    run_id, _ = plan_run(spec_from(), config(), bars, symbol_spec())
+    run_id, _ = plan_run(bound(), config(), bars, symbol_spec())
     assert run_id == first.run_id
     # the caller decides whether to re-run: the store only says it is already there
     assert len(store.list_runs()) == 1
@@ -192,7 +197,7 @@ def test_failed_run_stays_tracked(tmp_path: Path) -> None:
     spec = spec_from(risk={"max_open_positions": 5})  # not supported by the engine
 
     with pytest.raises(NotImplementedError):
-        execute_run(store, spec, config(), bars, symbol_spec_snapshot(), ATHENS)
+        execute_run(store, bound(spec), config(), bars, symbol_spec_snapshot(), ATHENS)
 
     runs = store.list_runs(status="error")
     assert len(runs) == 1

@@ -50,6 +50,43 @@ as many words. The API path simply never called it. Every number in
 - a test asserts the stored run's instrument is the one the request named, and
   fails against the previous behaviour
 
+### One binder, and no way around it
+
+Calling `bind_cell` on the API path fixes the symptom. The cause was that
+there were four ways to point a spec at an instrument: the screening funnel
+called `bind_cell`, while the API, the batch runner, the live runner and the
+diary comparison each wrote `instrument.symbol` and `instrument.timeframe` by
+hand. The three that were right were right because somebody had remembered.
+
+`core/strategy/binding.py` holds the only one. `BoundSpec` rewrites the
+instrument block on construction, so it cannot hold a spec that points
+somewhere other than the cell it names, and every entry point that executes a
+spec takes one instead of a bare `StrategySpec`:
+
+| entry point | seam |
+|---|---|
+| backtest, screen, batch | `plan_run`, `execute_run` |
+| edge | `run_edge_gate` |
+| preview | `preview` |
+| live | `LiveRunner` |
+| replay | `replay`, `compare_replay` |
+
+Each seam also refuses bars it is not bound to: `plan_run`, `execute_run` and
+`run_edge_gate` compare the binding against the `RunConfig` they were given,
+the preview, live and replay seams against the instrument spec they were
+handed. Binding to the wrong cell is a `CellMismatch` before any bar is read,
+rather than a number that looks like every other number.
+
+- `tests/test_binding.py` asserts the refusal on each seam, that each seam's
+  signature demands a `BoundSpec`, and that no file under `core/`, `api/` or
+  `scripts/` writes an instrument block outside the binder. The last is the
+  one that matters: a fifth binder is how this comes back, and it fails the
+  build the moment one is written
+- no output moves. The bound spec serializes byte-identically to what the
+  hand-written binding produced, on every strategy in the library, so every
+  `run_id` is the one it was, both golden references reproduce unchanged and
+  both halves of the committed campaign still verify field by field
+
 ### A naive date bound returned 500
 
 `start=2020-01-01` - the most ordinary input the API takes - reached pandas as

@@ -34,7 +34,7 @@ from core.live.broker import (
     OrderResult,
 )
 from core.live.runner import LiveConfig, LiveRunner
-from core.strategy.spec import StrategySpec
+from core.strategy.binding import BoundSpec
 
 logger = logging.getLogger(__name__)
 
@@ -96,7 +96,7 @@ class ReplayResult:
 
 
 def replay(
-    strategy: StrategySpec,
+    bound: BoundSpec,
     bars: pd.DataFrame,
     symbol_spec: SymbolSpec,
     server_tz: tzinfo,
@@ -116,8 +116,9 @@ def replay(
     """
     from core.engine.backtester import trades_frame
 
+    bound.must_match(symbol_spec.name)
     pinned = calendar or SessionCalendar.infer(
-        bars.index, strategy.instrument.tf, session_threshold, server_tz
+        bars.index, bound.tf, session_threshold, server_tz
     )
     config = LiveConfig(
         initial_equity=initial_equity,
@@ -128,7 +129,7 @@ def replay(
         dry_run=True,
     )
     runner = LiveRunner(
-        strategy, symbol_spec, server_tz, config, broker=ReplayBroker()
+        bound, symbol_spec, server_tz, config, broker=ReplayBroker()
     )
     runner.start(bars.iloc[:0])
 
@@ -203,7 +204,7 @@ class EquivalenceReport:
 
 
 def compare_replay(
-    strategy: StrategySpec,
+    bound: BoundSpec,
     bars: pd.DataFrame,
     symbol_spec: SymbolSpec,
     server_tz: tzinfo,
@@ -217,12 +218,13 @@ def compare_replay(
     concession: a calendar is an input, like the spread policy, and comparing
     two runs that were handed different inputs measures the inputs.
     """
+    bound.must_match(symbol_spec.name)
     pinned = SessionCalendar.infer(
-        bars.index, strategy.instrument.tf, session_threshold, server_tz
+        bars.index, bound.tf, session_threshold, server_tz
     )
     model = costs or CostModel()
     expected = run_backtest(
-        strategy,
+        bound.spec,
         bars,
         symbol_spec,
         server_tz,
@@ -234,7 +236,7 @@ def compare_replay(
         ),
     )
     actual = replay(
-        strategy, bars, symbol_spec, server_tz, model, initial_equity,
+        bound, bars, symbol_spec, server_tz, model, initial_equity,
         session_threshold, pinned,
     )
 
@@ -259,9 +261,9 @@ def compare_replay(
         )
 
     report = EquivalenceReport(
-        strategy_id=strategy.id,
-        symbol=strategy.instrument.symbol,
-        timeframe=strategy.instrument.timeframe,
+        strategy_id=bound.spec.id,
+        symbol=bound.symbol,
+        timeframe=bound.timeframe,
         bars=int(len(bars)),
         backtest_trades=int(len(expected.trades)),
         replay_trades=int(len(actual.trades)),

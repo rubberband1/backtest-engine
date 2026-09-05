@@ -61,12 +61,14 @@ def test_a_cell_binds_the_instrument_into_the_spec() -> None:
     """The engine reads the timeframe from the spec: leaving it stale is a bug."""
     spec = StrategySpec.from_json(LIBRARY / "ma-crossover.json")
     bound = bind_cell(spec, "XTIUSD", "M5")
-    assert bound.instrument.symbol == "XTIUSD"
-    assert bound.instrument.timeframe == "M5"
-    assert bound.instrument.tf.minutes == 5
+    assert bound.symbol == "XTIUSD"
+    assert bound.timeframe == "M5"
+    assert bound.tf.minutes == 5
+    assert bound.spec.instrument.symbol == "XTIUSD"
+    assert bound.spec.instrument.timeframe == "M5"
     # everything else is untouched, including the id used for grouping
-    assert bound.id == spec.id
-    assert bound.exit.stop_loss == spec.exit.stop_loss
+    assert bound.spec.id == spec.id
+    assert bound.spec.exit.stop_loss == spec.exit.stop_loss
 
 
 # -- the trial panel -----------------------------------------------------

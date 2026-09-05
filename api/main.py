@@ -48,7 +48,7 @@ from core.live.compare import compare as live_compare
 from core.live.journal import Journal
 from core.live.lock import RunLock, process_alive
 from core.paths import project_relative
-from core.research.screen import bind_cell, run_screen
+from core.research.screen import run_screen
 from core.research.tradability import DEFAULT_MAX_SPREAD_ATR
 from core.research.tradability import build_table as build_tradability
 from core.runs.runner import (
@@ -64,6 +64,7 @@ from core.runs.runner import (
 )
 from core.runs.store import RunConfig, RunNotFound, RunStore, spec_hash
 from core.serialization import json_safe
+from core.strategy.binding import bind_cell
 from core.strategy.spec import SpecError, StrategySpec
 from core.validation.multiple_testing import (
     Trial,
@@ -515,7 +516,7 @@ def post_preview(request: s.PreviewRequest) -> s.PreviewResponse:
     """What this spec is about to cost, before any backtest is run."""
     from core.research.preview import preview as build_preview
 
-    spec, run_config, bars, symbol_spec = _prepare(request, request.config)
+    bound, run_config, bars, symbol_spec = _prepare(request, request.config)
     family = [
         store.load_run(summary.run_id)
         for summary in store.list_runs(symbol=run_config.symbol, status="done")
@@ -529,7 +530,7 @@ def post_preview(request: s.PreviewRequest) -> s.PreviewResponse:
                             run_config.start, run_config.end)
     ]
     report = build_preview(
-        spec,
+        bound,
         bars,
         symbol_spec.spec,
         cache,
@@ -646,7 +647,7 @@ def _prepare(request: s.StrategyRef, config: s.RunConfigIn):
     result's own instrument label from the spec, not from the config. The time
     stop was then out by the ratio of the two timeframes.
     """
-    spec = bind_cell(
+    bound = bind_cell(
         _resolve_spec(request), config.symbol, _timeframe(config.timeframe).name
     )
     run_config = _run_config(config)
@@ -658,7 +659,7 @@ def _prepare(request: s.StrategyRef, config: s.RunConfigIn):
             f"narrow the period",
         )
     symbol_spec = resolver.symbol_spec_snapshot(run_config.symbol)
-    return spec, run_config, bars, symbol_spec
+    return bound, run_config, bars, symbol_spec
 
 
 # -- gate zero -----------------------------------------------------------
@@ -667,7 +668,7 @@ def _prepare(request: s.StrategyRef, config: s.RunConfigIn):
 @app.post("/api/edge", response_model=s.EdgeResponse, tags=["research"])
 def post_edge(request: s.EdgeRequest) -> s.EdgeResponse:
     """Gate zero: does the signal beat the spread, before even talking SL/TP?"""
-    spec, run_config, bars, symbol_spec = _prepare(request, request.config)
+    bound, run_config, bars, symbol_spec = _prepare(request, request.config)
     if request.horizons is not None and (
         not request.horizons or any(h < 1 for h in request.horizons)
     ):
@@ -675,7 +676,8 @@ def post_edge(request: s.EdgeRequest) -> s.EdgeResponse:
 
     started = time.perf_counter()
     report = run_edge_gate(
-        spec, run_config, bars, symbol_spec.spec, request.horizons, request.min_observations
+        bound, run_config, bars, symbol_spec.spec, request.horizons,
+        request.min_observations,
     )
     logger.info("gate zero in %.2fs", time.perf_counter() - started)
     return s.EdgeResponse(**report.as_dict())
@@ -687,9 +689,9 @@ def post_edge(request: s.EdgeRequest) -> s.EdgeResponse:
 @app.post("/api/backtest", response_model=s.BacktestResponse, tags=["backtest"])
 def post_backtest(request: s.BacktestRequest) -> s.BacktestResponse:
     """Launches a backtest. If it takes over two seconds the run_id returns immediately."""
-    spec, run_config, bars, symbol_spec = _prepare(request, request.config)
+    bound, run_config, bars, symbol_spec = _prepare(request, request.config)
     server_tz = resolver.server_timezone()
-    run_id, fingerprint = plan_run(spec, run_config, bars, symbol_spec.spec)
+    run_id, fingerprint = plan_run(bound, run_config, bars, symbol_spec.spec)
 
     if store.exists(run_id) and not request.force:
         meta = store.load_meta(run_id)
@@ -709,14 +711,14 @@ def post_backtest(request: s.BacktestRequest) -> s.BacktestResponse:
             )
 
     store.begin_run(
-        run_id, spec, run_config, fingerprint, len(bars),
+        run_id, bound.spec, run_config, fingerprint, len(bars),
         bars.index[0].to_pydatetime(), bars.index[-1].to_pydatetime(),
         symbol_spec,
     )
 
     assert _executor is not None
     future = _executor.submit(
-        execute_run, store, spec, run_config, bars, symbol_spec, server_tz, run_id
+        execute_run, store, bound, run_config, bars, symbol_spec, server_tz, run_id
     )
     _jobs[run_id] = future
 
@@ -1346,7 +1348,11 @@ def _grid_trials(record, grid: dict[str, list[Any]]) -> tuple[np.ndarray, list[T
     columns: list[np.ndarray] = []
     trials: list[Trial] = []
     for params in expand_grid(grid):
-        candidate = apply_params(record.spec, params)
+        candidate = bind_cell(
+            apply_params(record.spec, params),
+            record.config.symbol,
+            record.config.timeframe,
+        ).spec
         result = run_backtest(candidate, bars, symbol_spec, server_tz, config)
         series = pd.Series(0.0, index=days)
         pnl = np.zeros(0)
@@ -1687,12 +1693,8 @@ def get_live_comparison(session_id: str) -> s.LiveComparisonOut:
             ),
         )
 
-    spec = apply_params(
-        _strategy_by_id(session.strategy_id),
-        {
-            "instrument.symbol": session.symbol,
-            "instrument.timeframe": session.timeframe,
-        },
+    bound = bind_cell(
+        _strategy_by_id(session.strategy_id), session.symbol, session.timeframe
     )
     tf = _timeframe(session.timeframe)
     end = (session.last_bar or session.first_bar) + timedelta(minutes=tf.minutes)
@@ -1700,7 +1702,7 @@ def get_live_comparison(session_id: str) -> s.LiveComparisonOut:
     symbol_spec = resolver.symbol_spec(session.symbol)
 
     expected = run_backtest(
-        spec,
+        bound.spec,
         bars,
         symbol_spec,
         resolver.server_timezone(),

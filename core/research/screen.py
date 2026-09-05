@@ -77,6 +77,7 @@ from core.runs.runner import (
 )
 from core.runs.store import RunConfig, RunStore
 from core.serialization import json_safe
+from core.strategy.binding import BoundSpec, bind_cell
 from core.strategy.spec import StrategySpec
 from core.validation.multiple_testing import (
     DEFAULT_ALPHA,
@@ -347,22 +348,9 @@ def build_cells(
     return cells
 
 
-def bind_cell(spec: StrategySpec, symbol: str, timeframe: str) -> StrategySpec:
-    """The spec as it is actually run on this cell.
-
-    The instrument block is not decoration: the engine reads the timeframe
-    from it to count session bars for the time stop, so a spec declaring M1
-    executed over H1 bars would apply a time stop sixty times too short. The
-    symbol is bound too, so the run folder says which instrument it was.
-    """
-    return apply_params(
-        spec, {"instrument.symbol": symbol, "instrument.timeframe": timeframe}
-    )
-
-
 def _compare_relaxed(
     outcome: CellOutcome,
-    bound: StrategySpec,
+    bound: BoundSpec,
     config: RunConfig,
     bars: pd.DataFrame,
     snapshot: SymbolSpecSnapshot,
@@ -377,7 +365,7 @@ def _compare_relaxed(
     rather than by the strategy. A relaxed run that trades three times as
     often for the same PnL says the gates were selecting the winners.
     """
-    relaxed = relax_gates(bound)
+    relaxed = bind_cell(relax_gates(bound.spec), bound.symbol, bound.timeframe)
     try:
         run_id, _ = plan_run(relaxed, config, bars, snapshot.spec)
         if not (store.exists(run_id) and store.load_meta(run_id).status == "done"):
@@ -617,7 +605,7 @@ def _screen_cell(
     try:
         report = permutation_test(
             "random_entries",
-            bound,
+            bound.spec,
             bars,
             snapshot.spec,
             server_tz,

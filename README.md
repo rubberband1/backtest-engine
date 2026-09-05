@@ -96,7 +96,7 @@ Getting to an honest "no" takes more machinery than getting to a hopeful
   cells that produced a Sharpe worth comparing, **33 had none at all**: the
   best of them, `rsi-mean-reversion` on `AUDUSD.r` H4 at +0.1990 over 172
   trades, was charged an assumed cost on all 8,214 of its bars.
-- 577 tests, including one that recomputes signals on truncated history to
+- 596 tests, including one that recomputes signals on truncated history to
   prove no rule can see the future, one that demands a dry-run diary compare
   to its own backtest at exactly zero, and one that regenerates the shipped
   dataset and diffs it against what is committed.
@@ -159,7 +159,7 @@ each one comes from.
 Run the tests, which do not need a terminal either:
 
 ```
-.venv/Scripts/python -m pytest -q     # 568 pass, 9 skip on a fresh clone
+.venv/Scripts/python -m pytest -q     # 587 pass, 9 skip on a fresh clone
 ```
 
 Nine skips, and each says why. Eight are marked `mt5` and talk to the

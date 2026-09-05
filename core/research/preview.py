@@ -54,6 +54,7 @@ from core.metrics.breakeven import BreakevenPrior, breakeven_prior
 from core.research.edge import AmbiguityPrior, ambiguity_prior
 from core.research.tradability import DEFAULT_MAX_SPREAD_ATR, TradabilityCell, assess
 from core.serialization import json_safe
+from core.strategy.binding import BoundSpec
 from core.strategy.evaluator import evaluate
 from core.strategy.spec import StrategySpec
 from core.validation.multiple_testing import (
@@ -384,7 +385,7 @@ def attempts_panel(
 
 
 def preview(
-    strategy: StrategySpec,
+    bound: BoundSpec,
     bars: pd.DataFrame,
     symbol_spec: SymbolSpec,
     cache: ParquetCache | None = None,
@@ -397,8 +398,10 @@ def preview(
     overall_trials: TrialSet | None = None,
 ) -> StrategyPreview:
     """Signal frequency, break-even, ambiguity, tradability and attempts."""
-    timeframe = strategy.instrument.tf
-    symbol = strategy.instrument.symbol
+    bound.must_match(symbol_spec.name)
+    strategy = bound.spec
+    timeframe = bound.tf
+    symbol = bound.symbol
     warnings: list[str] = []
 
     if spread_reference is None and cache is not None:

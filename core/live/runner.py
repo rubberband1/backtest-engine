@@ -68,6 +68,7 @@ from core.live.broker import DEFAULT_MAGIC, LiveBroker, OpenPosition, OrderReque
 from core.live.journal import Journal, spec_payload
 from core.live.lock import RunLock
 from core.serialization import json_safe
+from core.strategy.binding import BoundSpec
 from core.strategy.evaluator import evaluate
 from core.strategy.incremental import (
     BarSignals,
@@ -143,12 +144,17 @@ class LiveRunner:
 
     def __init__(
         self,
-        strategy: StrategySpec,
+        bound: BoundSpec,
         symbol_spec: SymbolSpec,
         server_tz: tzinfo,
         config: LiveConfig | None = None,
         broker: LiveBroker | None = None,
     ) -> None:
+        # the runner takes its timeframe from the spec, so a spec bound to
+        # another instrument would trade this one under the wrong horizon
+        bound.must_match(symbol_spec.name)
+        strategy = bound.spec
+        self.bound = bound
         self.strategy = strategy
         self.symbol = symbol_spec
         self.server_tz = server_tz

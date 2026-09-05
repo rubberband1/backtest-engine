@@ -50,8 +50,8 @@ from core.engine.costs import (  # noqa: E402
 from core.live.compare import compare  # noqa: E402
 from core.live.journal import Journal, environment  # noqa: E402
 from core.runs.runner import SymbolResolver  # noqa: E402
+from core.strategy.binding import bind_cell  # noqa: E402
 from core.strategy.spec import StrategySpec  # noqa: E402
-from core.validation.walkforward import apply_params  # noqa: E402
 from core.version import ENGINE_VERSION  # noqa: E402
 
 logger = logging.getLogger("compare-live")
@@ -187,10 +187,7 @@ def main() -> int:
     spec = find_spec(str(facts["strategy_id"] or ""), args.strategy)
     symbol = str(facts["symbol"])
     timeframe = Timeframe.parse(str(facts["timeframe"]))
-    spec = apply_params(
-        spec,
-        {"instrument.symbol": symbol, "instrument.timeframe": timeframe.name},
-    )
+    bound = bind_cell(spec, symbol, timeframe.name)
 
     env = environment(journal)
     if (
@@ -239,7 +236,7 @@ def main() -> int:
         swap=SwapModel(mode="points"),
     )
     expected = run_backtest(
-        spec, bars, symbol_spec, server_tz,
+        bound.spec, bars, symbol_spec, server_tz,
         BacktestConfig(initial_equity=args.equity, costs=costs),
     )
     report = compare(expected.trades, journal, symbol_spec, timeframe.name)
