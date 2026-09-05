@@ -1,3 +1,4 @@
+import { NumberField } from "../components/NumberField";
 import { useEffect, useMemo, useState } from "react";
 import {
   api,
@@ -88,6 +89,9 @@ export function BatchPage() {
         commission_per_lot_per_side: 0,
         swap_mode: "points",
         session_threshold: 0.5,
+    // above M1 a per-bar spread is rebuilt from the M1 sample; the
+    // median is the point of that distribution a fill is charged at
+    per_bar_spread_quantile: 0.5,
       };
       setReport(
         await api.batch({ strategy_id: strategyId, symbols: picked, config }),
@@ -156,12 +160,11 @@ export function BatchPage() {
               />
             </Field>
             <Field label="Initial equity" htmlFor="b-equity" hint="per cell, account currency">
-              <input
+              <NumberField
                 id="b-equity"
-                type="number"
                 min={1}
                 value={equity}
-                onChange={(event) => setEquity(Number(event.target.value))}
+                onChange={(value) => setEquity(value ?? 0)}
               />
             </Field>
             <Field

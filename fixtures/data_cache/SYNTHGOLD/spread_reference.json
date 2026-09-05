@@ -1,0 +1,14 @@
+{
+  "symbol": "SYNTHGOLD",
+  "source_timeframe": "M1",
+  "bars": 30240,
+  "usable_bars": 30240,
+  "zero_share": 0.0,
+  "median_points": 8.0,
+  "mean_points": 10.179563492063492,
+  "p90_points": 17.0,
+  "p99_points": 17.0,
+  "window_start": "2023-12-01T00:00:00+00:00",
+  "window_end": "2023-12-31T23:59:00+00:00",
+  "measured_at": "2026-09-05T08:41:35.421359+00:00"
+}

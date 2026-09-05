@@ -15,8 +15,9 @@ that is not a safety margin, it is the strategy.
 from __future__ import annotations
 
 from collections import Counter
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass, field
-from typing import Any, Mapping
+from typing import Any
 
 from core.serialization import json_safe
 

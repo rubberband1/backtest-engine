@@ -139,7 +139,7 @@ def test_stoch_on_flat_range_does_not_divide_by_zero() -> None:
 
 
 def test_registry_rejects_unknown_parameters(bars: pd.DataFrame) -> None:
-    with pytest.raises(Exception, match="periodo|period|extra"):
+    with pytest.raises(Exception, match=r"periodo|period|extra"):
         registry.get("rsi").compute(bars, {"periodo": 14})
 
 

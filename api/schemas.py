@@ -41,7 +41,10 @@ class SymbolSpecOut(Model):
 
 class SymbolListOut(Model):
     symbols: list[SymbolSpecOut]
-    source: Literal["terminal", "cache"]
+    # "fixture" means the synthetic dataset: the terminal was not asked,
+    # because the fixture is a committed artefact and refreshing it would
+    # write real broker specs into it.
+    source: Literal["terminal", "cache", "fixture"]
     server_timezone: str | None = None
     cached_symbols: list[str] = Field(
         default_factory=list, description="symbols with data already in the local cache"
@@ -65,6 +68,7 @@ class QualityOut(Model):
     duplicate_timestamps: int
     zero_spread: int
     session_confidence: str
+    session_clock: str
     text: str
     worst_gaps: list[GapOut] = Field(default_factory=list)
 
@@ -77,6 +81,11 @@ class CoverageOut(Model):
     end: datetime | None
     bars: int
     quality: QualityOut | None = None
+    # The instrument's spread measured where the field means something, on
+    # M1. Carried here because a caller deciding what to charge needs the
+    # measurement in the same breath as the coverage that says whether a
+    # per-bar spread is reconstructable at all. None when there is no M1.
+    spread_median_points: float | None = None
 
 
 # -- strategies ----------------------------------------------------------
@@ -117,13 +126,149 @@ class RunConfigIn(Model):
     commission_per_lot_per_side: float = Field(default=0.0, ge=0)
     swap_mode: SwapMode = "points"
     session_threshold: float = Field(default=0.5, gt=0, le=1)
+    # Above M1 a per-bar spread is rebuilt from the M1 bars of the same
+    # period; this picks the point of their distribution that stands for what
+    # a fill paid. Bounded below at the median on purpose: lower values walk
+    # back towards the minimum, which is the number this whole mechanism
+    # exists to stop charging.
+    per_bar_spread_quantile: float = Field(default=0.5, ge=0.5, le=1.0)
 
 
-class StrategyRef(Model):
+class StrategyRefBase(Model):
     """The strategy arrives by id (from `strategies/`) or inline."""
 
     strategy_id: str | None = None
     spec: dict[str, Any] | None = None
+
+
+# -- the vocabulary the editor builds from --------------------------------
+
+
+class ParamOut(Model):
+    """One indicator parameter, as the registry declares it."""
+
+    name: str
+    type: str
+    default: Any = None
+    minimum: float | None = None
+    maximum: float | None = None
+    exclusive_minimum: float | None = None
+    choices: list[str] | None = None
+
+
+class IndicatorOut(Model):
+    name: str
+    params: list[ParamOut]
+    # named outputs; empty means the indicator is a single series and is
+    # referenced by its id alone
+    outputs: list[str] = Field(default_factory=list)
+    # OHLC columns the indicator reads directly; empty means it runs over a
+    # single price source chosen by the `source` parameter
+    bar_inputs: list[str] = Field(default_factory=list)
+
+
+class VocabularyOut(Model):
+    """Everything the strategy editor is allowed to build out of.
+
+    Served rather than duplicated in the frontend: a tenth indicator, a new
+    parameter or a renamed bar field has to reach the editor by appearing
+    here, and cannot reach it by someone remembering to update a second list.
+    """
+
+    schema_version: int
+    indicators: list[IndicatorOut]
+    features: list[str]
+    bar_fields: list[str]
+    price_sources: list[str]
+    comparison_operators: list[str]
+    group_operators: list[str]
+    trend_operators: list[str]
+    exit_level_types: list[str]
+    sizing_types: list[str]
+    timeframes: list[str]
+    spread_modes: list[str]
+    swap_modes: list[str]
+
+
+class SaveStrategyRequest(Model):
+    spec: dict[str, Any]
+    # False refuses to replace a file that exists: an editor that overwrites
+    # the strategy being copied from is an editor that loses work
+    overwrite: bool = False
+
+
+class SaveStrategyResponse(Model):
+    id: str
+    file: str
+    created: bool
+    message: str
+
+
+# -- what a strategy is about to cost, before it is run -------------------
+
+
+class AttemptsPanelOut(Model):
+    """The multiple-testing correction at two scopes; see `core.research.preview`.
+
+    The unprefixed fields are the local scope - this instrument over an
+    overlapping period. The `overall_` fields are the whole search, which is
+    what the campaign report quotes and what governs a claim of discovery.
+    """
+
+    symbol: str
+    period_start: datetime | None = None
+    period_end: datetime | None = None
+    attempts: int
+    sharpes_observed: int
+    variance_across_trials: float | None = None
+    expected_max_sharpe: float | None = None
+    required_sharpe_per_trade: float | None = None
+    assumed_trades: int
+    confidence: float
+    verdict: str
+    scope: str = ""
+    overall_scope: str = ""
+    overall_attempts: int = 0
+    overall_sharpes_observed: int = 0
+    overall_variance_across_trials: float | None = None
+    overall_expected_max_sharpe: float | None = None
+    overall_required_sharpe_per_trade: float | None = None
+
+
+class PreviewRequest(StrategyRefBase):
+    config: RunConfigIn
+
+
+class PreviewResponse(Model):
+    strategy_id: str
+    symbol: str
+    timeframe: str
+    period_start: datetime | None = None
+    period_end: datetime | None = None
+    bars: int
+
+    signals_long: int
+    signals_short: int
+    signals_total: int
+    signals_per_1000_bars: float
+    trades_upper_bound: int
+    min_judgeable_trades: int
+    judgeable: bool
+
+    median_spread_points: float | None = None
+    spread_source: str
+
+    breakeven: BreakevenPriorOut | None = None
+    ambiguity: AmbiguityPriorOut | None = None
+    tradability: TradabilityCellOut | None = None
+    attempts: AttemptsPanelOut | None = None
+
+    verdict: str = ""
+    warnings: list[str] = Field(default_factory=list)
+
+
+class StrategyRef(StrategyRefBase):
+    """The strategy arrives by id (from `strategies/`) or inline."""
 
 
 class BacktestRequest(StrategyRef):
@@ -323,6 +468,24 @@ class GatesOut(Model):
     verdict: str
 
 
+class SpreadRealismOut(Model):
+    """What a run's spread policy charged, and whether a fill could have paid it."""
+
+    mode: str
+    value: float | None = None
+    timeframe: str
+    median_charged_points: float
+    mean_charged_points: float
+    zero_charged_share: float
+    # True only for runs stored before the engine refused to charge the
+    # aggregated column: their costs are understated and their numbers are
+    # not comparable with anything produced since.
+    reads_aggregated_column: bool = False
+    reconstructed_from_m1: bool = False
+    trustworthy: bool = True
+    warnings: list[str] = Field(default_factory=list)
+
+
 class RunSummaryOut(Model):
     run_id: str
     status: RunStatus
@@ -344,6 +507,7 @@ class RunSummaryOut(Model):
     profit_factor: float | None
     win_rate: float | None
     ambiguous_trades: int | None
+    aggregated_spread_cost: bool = False
 
 
 class RunDetailOut(Model):
@@ -371,6 +535,31 @@ class RunDetailOut(Model):
     symbol_spec: SymbolSpecOut | None = None
     symbol_spec_read_at: datetime | None = None
     symbol_spec_registered: bool = True
+    costs: SpreadRealismOut | None = None
+    spread_coverage: SpreadCoverageOut | None = None
+    # the run charged the bars' aggregated spread column above M1: its costs
+    # are understated by an unmeasured amount
+    aggregated_spread_cost: bool = False
+
+
+class SpreadCoverageOut(Model):
+    """How much of a run's period had an M1 sample to measure the spread on.
+
+    A run whose `measured_share` is low was charged a constant taken from a
+    different period. That is not wrong, but it is an assumption, and it is
+    the assumption most able to move a marginal result.
+    """
+
+    symbol: str
+    timeframe: str
+    bars: int
+    measured_bars: int
+    assumed_bars: int
+    measured_share: float
+    fully_measured: bool
+    m1_window_start: datetime | None = None
+    m1_window_end: datetime | None = None
+    verdict: str
 
 
 class EquityPoint(Model):
@@ -857,7 +1046,7 @@ class ScreenRequest(Model):
     strategy_ids: list[str] = Field(min_length=1)
     symbols: list[str] = Field(min_length=1)
     timeframes: list[str] = Field(min_length=1)
-    config: "RunConfigIn"
+    config: RunConfigIn
     min_trades: int = Field(default=30, ge=1)
     permutation_iterations: int = Field(default=200, ge=10, le=5000)
 
@@ -869,6 +1058,13 @@ class ScreenCellOut(Model):
     stage_reached: str
     status: str
     error: str | None = None
+
+    counts_as_attempt: bool = True
+    tradable: bool = True
+    tradability_judged: bool = True
+    spread_atr_ratio: float | None = None
+    spread_stop_share: float | None = None
+    tradability_reason: str | None = None
 
     gate_passed: bool | None = None
     gate_signals: int | None = None
@@ -891,13 +1087,69 @@ class ScreenCellOut(Model):
     p_value: float | None = None
     ambiguous_share: float | None = None
     band_money: float | None = None
+
+    signals: int | None = None
+    gate_rejected: int | None = None
+    gate_rejected_share: float | None = None
+    structural_rejected_share: float | None = None
+    discretionary_rejected_share: float | None = None
+    equity_rejected_share: float | None = None
+    gates_materially_altered: bool | None = None
     top_gate: str | None = None
     top_gate_share: float | None = None
     gate_warnings: list[str] = Field(default_factory=list)
 
+    spread_charged_median: float | None = None
+    spread_zero_share: float | None = None
+    spread_trustworthy: bool | None = None
+    # the share of this cell's bars with an M1 sample to measure the spread
+    # on; the rest were charged a constant from another period
+    spread_measured_share: float | None = None
+    spread_assumed_bars: int | None = None
+
+    relaxed_trades: int | None = None
+    relaxed_net_pnl: float | None = None
+    relaxed_sharpe_per_trade: float | None = None
+    relaxed_verdict: str | None = None
+
     permutation_p_value: float | None = None
     permutation_kind: str | None = None
     permutation_iterations: int | None = None
+
+
+class TradabilityCellOut(Model):
+    """One instrument x timeframe pair, and whether it may be tested at all."""
+
+    symbol: str
+    timeframe: str
+    bars: int
+    first_bar: datetime | None = None
+    last_bar: datetime | None = None
+    median_spread_points: float | None = None
+    p90_spread_points: float | None = None
+    spread_source: str
+    median_atr_points: float | None = None
+    spread_atr_ratio: float | None = None
+    p90_spread_atr_ratio: float | None = None
+    spread_stop_share: float | None = None
+    stop_atr_mult: float
+    max_ratio: float
+    tradable: bool
+    judged: bool
+    reason: str
+
+
+class TradabilityOut(Model):
+    """Stage zero of the funnel: what the broker's spread makes untestable."""
+
+    cells: list[TradabilityCellOut] = Field(default_factory=list)
+    max_ratio: float
+    atr_period: int
+    stop_atr_mult: float
+    tradable: int
+    excluded: int
+    unjudged: int
+    warnings: list[str] = Field(default_factory=list)
 
 
 class TrialPanelOut(Model):
@@ -919,6 +1171,8 @@ class TrialPanelOut(Model):
     survivors_after_correction: int
     verdict: str
     assumptions: list[str] = Field(default_factory=list)
+    spread_measured_share_median: float | None = None
+    cells_with_no_measured_spread: int = 0
 
 
 class ScreenReportOut(Model):
@@ -931,10 +1185,16 @@ class ScreenReportOut(Model):
     cells: list[ScreenCellOut]
     panel: TrialPanelOut
     thresholds: list[ThresholdRowOut] = Field(default_factory=list)
+    tradability: TradabilityOut | None = None
     elapsed_seconds: float
     engine_version: str
     verdict: str
     warnings: list[str] = Field(default_factory=list)
+    # the inputs this campaign was frozen against. Kept as an opaque payload
+    # rather than a typed model: it is written and read by
+    # `core.research.manifest`, and a second schema for it here would be a
+    # second place for it to drift.
+    manifest: dict[str, Any] | None = None
 
 
 class ScreenJobOut(Model):
@@ -949,3 +1209,123 @@ class ScreenJobOut(Model):
     current: str | None = None
     error: str | None = None
     report: ScreenReportOut | None = None
+
+
+# -- the live runner -----------------------------------------------------
+
+
+class LiveSessionOut(Model):
+    """One runner's diary, summarized. Never carries account identity."""
+
+    session_id: str
+    symbol: str
+    timeframe: str
+    strategy_id: str | None = None
+    engine_version: str | None = None
+    dry_run: bool = True
+    account_guard: dict[str, Any] | None = None
+    initial_equity: float | None = None
+    bars_processed: int = 0
+    trades: int = 0
+    errors: int = 0
+    first_bar: datetime | None = None
+    last_bar: datetime | None = None
+    last_event_at: datetime | None = None
+    stopped: bool = False
+    running: bool = False
+    # A diary with no lock beside it was never written by a live process: a
+    # replay leaves one, and calling that a crashed runner would be a false
+    # alarm on the one screen that must not cry wolf.
+    has_lock: bool = False
+    pid: int | None = None
+
+
+class LiveEventOut(Model):
+    """One line of the diary, newest first in the listing."""
+
+    at: datetime
+    kind: str
+    bar_time: datetime | None = None
+    detail: dict[str, Any] = Field(default_factory=dict)
+
+
+class LiveTradeOut(Model):
+    direction: int
+    entry_time: datetime
+    entry_price: float
+    stop_level: float | None = None
+    target_level: float | None = None
+    exit_time: datetime
+    exit_price: float
+    exit_reason: str
+    lots: float
+    bars_held: int
+    session_bars_held: int
+    gross_pnl: float
+    spread_points: float
+    spread_cost: float
+    commission: float
+    swap: float
+    net_pnl: float
+    risk_money: float
+    r_multiple: float | None = None
+    ambiguous: bool = False
+    crossed_gap: bool = False
+
+
+class LiveDetailOut(Model):
+    session: LiveSessionOut
+    events: list[LiveEventOut] = Field(default_factory=list)
+    trades: list[LiveTradeOut] = Field(default_factory=list)
+
+
+class TradeDeviationOut(Model):
+    """One trade both records hold, and where they disagree."""
+
+    entry_time: datetime
+    direction: int
+    entry_slippage_points: float | None = None
+    exit_slippage_points: float | None = None
+    entry_slippage_money: float | None = None
+    pnl_difference: float
+    lots_expected: float
+    lots_realized: float
+    exit_reason_expected: str
+    exit_reason_realized: str
+    exit_reason_differs: bool = False
+
+
+class UnmatchedTradeOut(Model):
+    entry_time: datetime
+    direction: int
+    net_pnl: float
+    exit_reason: str
+    side: str
+    reason: str
+
+
+class LiveComparisonOut(Model):
+    """Expected versus realized, with the PnL gap split by cause."""
+
+    symbol: str
+    timeframe: str
+    period_start: datetime | None = None
+    period_end: datetime | None = None
+    expected_trades: int
+    realized_trades: int
+    matched: int
+    deviations: list[TradeDeviationOut] = Field(default_factory=list)
+    only_expected: list[UnmatchedTradeOut] = Field(default_factory=list)
+    only_realized: list[UnmatchedTradeOut] = Field(default_factory=list)
+    expected_pnl: float
+    realized_pnl: float
+    pnl_from_slippage: float
+    pnl_from_unmatched: float
+    pnl_unexplained: float
+    median_entry_slippage_points: float | None = None
+    p90_entry_slippage_points: float | None = None
+    rejected_orders: int = 0
+    partial_fills: int = 0
+    bars_processed: int = 0
+    verdict: str = ""
+    warnings: list[str] = Field(default_factory=list)

@@ -21,17 +21,23 @@ from __future__ import annotations
 import logging
 import os
 import time
+from collections.abc import Sequence
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any
 
 import numpy as np
 from scipy import stats
 
 from core.data.cache import ParquetCache
-from core.runs.runner import SymbolResolver, execute_run, load_bars, plan_run
+from core.runs.runner import (
+    SymbolResolver,
+    execute_run,
+    load_bars_for_run,
+    plan_run,
+)
 from core.runs.store import RunConfig, RunStore
 from core.serialization import json_safe
 from core.strategy.spec import StrategySpec
@@ -200,7 +206,7 @@ def _execute_cell(cell: BatchCell) -> CellResult:
         store: RunStore = _CONTEXT["store"]
         resolver: SymbolResolver = _CONTEXT["resolver"]
 
-        bars = load_bars(cache, cell.symbol, config.tf, config.start, config.end)
+        bars = load_bars_for_run(cache, config)
         symbol_spec = resolver.symbol_spec_snapshot(cell.symbol)
         server_tz = resolver.server_timezone()
         run_id, _ = plan_run(spec, config, bars, symbol_spec.spec)

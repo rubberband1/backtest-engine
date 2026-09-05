@@ -52,6 +52,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--no-browser", action="store_true")
     parser.add_argument("--no-ui", action="store_true", help="backend only")
     parser.add_argument("--reload", action="store_true", help="uvicorn in auto-reload")
+    parser.add_argument(
+        "--fixture",
+        action="store_true",
+        help="serve the synthetic dataset in fixtures/data_cache instead of "
+        "whatever is in data_cache/. Implied when data_cache/ is empty, which "
+        "is the case on a fresh clone",
+    )
     return parser.parse_args()
 
 
@@ -154,19 +161,49 @@ def terminate(process: subprocess.Popen | None, label: str) -> None:
         process.kill()
 
 
+def announce_data_source(force_fixture: bool) -> None:
+    """Says which bars the run will serve, before anything starts.
+
+    Loudly, when they are invented. Someone who opens the dashboard and sees
+    an equity curve has to know within the first second whether it came from
+    a market or from a random number generator, and the terminal is the first
+    place they can be told.
+    """
+    from core.data.fixture_provider import FIXTURE_CACHE, resolve_cache_dir
+
+    if force_fixture:
+        os.environ["BACKTEST_CACHE_DIR"] = str(FIXTURE_CACHE)
+    target, is_fixture = resolve_cache_dir(os.environ.get("BACKTEST_CACHE_DIR"))
+    if is_fixture:
+        logger.warning("=" * 68)
+        logger.warning("SYNTHETIC DATA: serving the fixture in %s", target)
+        logger.warning("The bars are invented. Every metric measured on them")
+        logger.warning("describes a random number generator, not a market.")
+        logger.warning("Download real bars with examples/download_year.py.")
+        logger.warning("=" * 68)
+    elif not target.exists():
+        logger.error(
+            "no data at %s and no fixture at %s: run "
+            "`python -m scripts.make_fixture` or download real bars",
+            target, FIXTURE_CACHE,
+        )
+    else:
+        logger.info("serving real bars from %s", target)
+
+
 def main() -> int:
     args = parse_args()
     os.chdir(ROOT)
+    announce_data_source(args.fixture)
 
     for port, label in ((args.api_port, "API"), (args.ui_port, "UI")):
-        if not args.no_ui or label == "API":
-            if not port_is_free(port):
-                logger.error(
-                    "port %d (%s) is already taken: close the other process or pass "
-                    "--%s-port",
-                    port, label, "api" if label == "API" else "ui",
-                )
-                return 1
+        if (not args.no_ui or label == "API") and not port_is_free(port):
+            logger.error(
+                "port %d (%s) is already taken: close the other process or pass "
+                "--%s-port",
+                port, label, "api" if label == "API" else "ui",
+            )
+            return 1
 
     schema_changed = export_schema()
     logger.info(
@@ -197,6 +234,9 @@ def main() -> int:
         if ui_ready and not args.no_ui:
             executable = npm()
             assert executable is not None
+            # the dev server proxies /api to the backend, and needs to be
+            # told where that is when --api-port moved it
+            os.environ["BACKTEST_API_PORT"] = str(args.api_port)
             frontend = spawn(
                 [executable, "run", "dev", "--", "--port", str(args.ui_port), "--strictPort"],
                 UI_DIR, "ui",

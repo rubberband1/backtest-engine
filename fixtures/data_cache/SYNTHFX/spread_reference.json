@@ -1,0 +1,14 @@
+{
+  "symbol": "SYNTHFX",
+  "source_timeframe": "M1",
+  "bars": 30240,
+  "usable_bars": 30240,
+  "zero_share": 0.0,
+  "median_points": 7.0,
+  "mean_points": 9.744047619047619,
+  "p90_points": 19.0,
+  "p99_points": 20.0,
+  "window_start": "2023-12-01T00:00:00+00:00",
+  "window_end": "2023-12-31T23:59:00+00:00",
+  "measured_at": "2026-09-05T09:24:07.444347+00:00"
+}

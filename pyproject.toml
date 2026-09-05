@@ -9,6 +9,7 @@ description = "Backtesting engine for trading strategies on MetaTrader 5 data"
 requires-python = ">=3.10"
 dependencies = [
     "pandas>=2.0",
+    "pytz>=2023.3",
     "numpy>=1.24",
     "pyarrow>=14.0",
     "pydantic>=2.5",
@@ -21,7 +22,14 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0", "httpx>=0.27"]
+dev = [
+    "pytest>=8.0",
+    "httpx>=0.27",
+    "ruff>=0.6",
+    "mypy>=1.11",
+    "pandas-stubs",
+    "types-PyYAML",
+]
 
 [tool.setuptools.packages.find]
 include = ["core*", "api*"]
@@ -32,3 +40,101 @@ markers = [
     "mt5: requires a running MetaTrader 5 terminal (skipped if absent)",
 ]
 filterwarnings = ["error::FutureWarning"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+extend-exclude = ["ui", ".venv", "data_cache", "fixtures", "runs", "logs", ".temp"]
+
+[tool.ruff.lint]
+# Not the full catalogue: the rules that catch real defects, plus the import
+# and naming hygiene that keeps a diff readable. Style beyond that is left to
+# the author - a linter that argues about taste gets switched off.
+select = ["E", "F", "W", "I", "B", "UP", "C4", "SIM", "RUF", "PIE", "T20"]
+ignore = [
+    # `zip(...)` without `strict=` - flagged everywhere pandas columns are
+    # paired, where the lengths are structurally equal.
+    "B905",
+    # ternary instead of if/else: often less readable at these line lengths.
+    "SIM108",
+    # `int(len(x))` and friends. The casts are deliberate: nearly everything
+    # here ends up in JSON, and a numpy integer that reaches `json.dumps`
+    # raises. Stripping them would be correct today and a landmine the first
+    # time one of these expressions starts returning a numpy scalar.
+    "RUF046",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# The scripts are command-line entry points: printing is their output. The
+# imports after the sys.path bootstrap carry their own `# noqa: E402`, one
+# per line, rather than a blanket exemption for the directory.
+"scripts/*" = ["T20"]
+"examples/*" = ["T20"]
+"run.py" = ["T20"]
+# Tests assert on behaviour, and a long test name is documentation.
+"tests/*" = ["E501"]
+
+[tool.mypy]
+python_version = "3.10"
+files = ["core"]
+
+# Non-permissive on core/, which is where a wrong type becomes a wrong
+# number. Every check below is on because it has caught something, or would.
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+disallow_untyped_calls = true
+disallow_untyped_decorators = true
+check_untyped_defs = true
+no_implicit_optional = true
+strict_equality = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_unreachable = true
+warn_no_return = true
+extra_checks = true
+
+# Deliberately NOT enabled, and the reason is the stubs rather than the code:
+#
+# `disallow_any_generics` demands `Series[Any]` and `ndarray[Any, Any]` at
+# every mention. It reports nothing about correctness here - a bare
+# `pd.Series` in an annotation is not a defect - and it costs several hundred
+# annotations in a codebase whose every function takes a frame.
+#
+# `warn_return_any` fires on every value that comes back out of pandas, which
+# is most of them: `frame["close"].iloc[-1]` is `Any` and casting it to
+# silence that would hide the one place the cast is load-bearing.
+disallow_any_generics = false
+warn_return_any = false
+
+# Codes switched off because `pandas-stubs` cannot narrow what the code
+# already knows, not because the code is loose. Every one of these was read
+# before it was disabled:
+#
+# - `arg-type` / `attr-defined`: `DataFrame.index` is typed `Index[Any]`, so
+#   every `bars.index` handed to something expecting a `DatetimeIndex` is an
+#   error, as is `.asi8` and `.to_pydatetime()` on it. The frames are
+#   guaranteed tz-aware UTC `DatetimeIndex` by the provider contract, and
+#   `normalize_bars` is where that is enforced.
+# - `call-overload` / `operator` / `union-attr`: the same narrowing failure
+#   through `.loc`, `.resample` and pydantic discriminated unions - mypy
+#   cannot see that `has_variable_exits(exit_)` being False leaves a
+#   `PointsLevel` behind.
+#
+# What stays on is everything about *this* code's own types: untyped and
+# incomplete definitions, unreachable branches, implicit Optional, redundant
+# casts, bad returns. That set found a real defect the first time it ran -
+# `FixtureProvider.probe_depth` constructed a class that does not exist, and
+# nothing called it, so nothing had failed yet.
+disable_error_code = [
+    "arg-type",
+    "attr-defined",
+    "call-overload",
+    "operator",
+    "union-attr",
+    "index",
+]
+
+# MetaTrader5 ships no stubs and exists only on Windows; scipy's are optional.
+[[tool.mypy.overrides]]
+module = ["MetaTrader5.*", "scipy.*"]
+ignore_missing_imports = true

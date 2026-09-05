@@ -1,0 +1,25 @@
+{
+  "schema_version": 2,
+  "symbol": "SYNTHFX",
+  "timeframe": "H4",
+  "year": 2023,
+  "coverage_utc": [
+    [
+      "2023-01-01T00:00:00+00:00",
+      "2024-01-01T00:00:00+00:00"
+    ]
+  ],
+  "provenance": [
+    {
+      "source": "synthetic_fixture",
+      "start_utc": "2023-01-01T00:00:00+00:00",
+      "end_utc": "2024-01-01T00:00:00+00:00",
+      "recorded_at_utc": "2026-09-05T08:36:21.119305+00:00"
+    }
+  ],
+  "rows": 1613,
+  "first_bar_utc": "2023-01-01T20:00:00+00:00",
+  "last_bar_utc": "2023-12-31T20:00:00+00:00",
+  "downloaded_at_utc": "2026-09-05T08:36:21.119305+00:00",
+  "server_timezone": "Europe/Athens"
+}

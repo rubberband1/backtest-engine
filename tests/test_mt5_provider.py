@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import pandas as pd
 import pytest
@@ -110,6 +111,6 @@ def test_ticks_in_utc(provider, symbol: str) -> None:
 def test_provider_does_not_expose_order_sending() -> None:
     import core.data.mt5_provider as module
 
-    source = open(module.__file__, encoding="utf-8").read()
+    source = Path(module.__file__).read_text(encoding="utf-8")
     for forbidden in ("order_send", "order_check", "positions_get", "TRADE_ACTION"):
         assert forbidden not in source, f"the data layer must not touch {forbidden}"

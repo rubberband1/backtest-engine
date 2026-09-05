@@ -54,7 +54,16 @@ export interface paths {
         /** List Strategies */
         get: operations["list_strategies_api_strategies_get"];
         put?: never;
-        post?: never;
+        /**
+         * Save Strategy
+         * @description Validates a spec and writes it to `strategies/`.
+         *
+         *     Refuses to replace an existing file unless asked to: the most likely way
+         *     to reach this endpoint is "duplicate one of the library strategies and
+         *     change it", and silently overwriting the original would be the worst
+         *     possible outcome of that flow.
+         */
+        post: operations["save_strategy_api_strategies_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -92,6 +101,50 @@ export interface paths {
          * @description Validates a spec without saving it. The errors are the human-readable ones.
          */
         post: operations["validate_strategy_api_strategies_validate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/vocabulary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Vocabulary
+         * @description What a spec may contain, straight from the registry and the models.
+         *
+         *     The editor renders whatever is here and nothing else. Duplicating this
+         *     list in the frontend is how a spec becomes valid on screen and invalid on
+         *     the server.
+         */
+        get: operations["get_vocabulary_api_vocabulary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/strategies/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Preview
+         * @description What this spec is about to cost, before any backtest is run.
+         */
+        post: operations["post_preview_api_strategies_preview_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -375,6 +428,99 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/tradability": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Tradability
+         * @description Stage zero: which instrument x timeframe pairs are worth testing at all.
+         *
+         *     The spread comes from each instrument's M1 sample, never from the bars
+         *     being judged: above M1 that column is the minimum spread inside the bar,
+         *     which on this broker is zero on most FX hours.
+         */
+        get: operations["get_tradability_api_tradability_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/live": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Live Sessions
+         * @description Every diary under the live directory, most recent activity first.
+         *
+         *     The backend does not run the runner: `scripts.run_live` does, in its own
+         *     process, with its own lock. This reads what that process wrote, so the
+         *     dashboard can be opened and closed without touching a running strategy.
+         */
+        get: operations["list_live_sessions_api_live_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/live/{session_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Live Session
+         * @description One runner: its state, its recent diary, and its closed trades.
+         */
+        get: operations["get_live_session_api_live__session_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/live/{session_id}/comparison": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Live Comparison
+         * @description Expected versus realized: a backtest of exactly the diary's own period.
+         *
+         *     The backtest is computed here rather than looked up, over the bars the
+         *     runner actually saw, so the two records describe the same period by
+         *     construction. Comparing against a backtest of a different window would
+         *     measure the window.
+         */
+        get: operations["get_live_comparison_api_live__session_id__comparison_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/health": {
         parameters: {
             query?: never;
@@ -434,6 +580,64 @@ export interface components {
             threshold: number;
             /** Verdict */
             verdict: string;
+        };
+        /**
+         * AttemptsPanelOut
+         * @description The multiple-testing correction at two scopes; see `core.research.preview`.
+         *
+         *     The unprefixed fields are the local scope - this instrument over an
+         *     overlapping period. The `overall_` fields are the whole search, which is
+         *     what the campaign report quotes and what governs a claim of discovery.
+         */
+        AttemptsPanelOut: {
+            /** Symbol */
+            symbol: string;
+            /** Period Start */
+            period_start?: string | null;
+            /** Period End */
+            period_end?: string | null;
+            /** Attempts */
+            attempts: number;
+            /** Sharpes Observed */
+            sharpes_observed: number;
+            /** Variance Across Trials */
+            variance_across_trials?: number | null;
+            /** Expected Max Sharpe */
+            expected_max_sharpe?: number | null;
+            /** Required Sharpe Per Trade */
+            required_sharpe_per_trade?: number | null;
+            /** Assumed Trades */
+            assumed_trades: number;
+            /** Confidence */
+            confidence: number;
+            /** Verdict */
+            verdict: string;
+            /**
+             * Scope
+             * @default
+             */
+            scope: string;
+            /**
+             * Overall Scope
+             * @default
+             */
+            overall_scope: string;
+            /**
+             * Overall Attempts
+             * @default 0
+             */
+            overall_attempts: number;
+            /**
+             * Overall Sharpes Observed
+             * @default 0
+             */
+            overall_sharpes_observed: number;
+            /** Overall Variance Across Trials */
+            overall_variance_across_trials?: number | null;
+            /** Overall Expected Max Sharpe */
+            overall_expected_max_sharpe?: number | null;
+            /** Overall Required Sharpe Per Trade */
+            overall_required_sharpe_per_trade?: number | null;
         };
         /** BacktestRequest */
         BacktestRequest: {
@@ -799,6 +1003,8 @@ export interface components {
             /** Bars */
             bars: number;
             quality?: components["schemas"]["QualityOut"] | null;
+            /** Spread Median Points */
+            spread_median_points?: number | null;
         };
         /** DeflatedSharpeOut */
         DeflatedSharpeOut: {
@@ -1048,6 +1254,228 @@ export interface components {
             /** Observed */
             observed: number;
         };
+        /** IndicatorOut */
+        IndicatorOut: {
+            /** Name */
+            name: string;
+            /** Params */
+            params: components["schemas"]["ParamOut"][];
+            /** Outputs */
+            outputs?: string[];
+            /** Bar Inputs */
+            bar_inputs?: string[];
+        };
+        /**
+         * LiveComparisonOut
+         * @description Expected versus realized, with the PnL gap split by cause.
+         */
+        LiveComparisonOut: {
+            /** Symbol */
+            symbol: string;
+            /** Timeframe */
+            timeframe: string;
+            /** Period Start */
+            period_start?: string | null;
+            /** Period End */
+            period_end?: string | null;
+            /** Expected Trades */
+            expected_trades: number;
+            /** Realized Trades */
+            realized_trades: number;
+            /** Matched */
+            matched: number;
+            /** Deviations */
+            deviations?: components["schemas"]["TradeDeviationOut"][];
+            /** Only Expected */
+            only_expected?: components["schemas"]["UnmatchedTradeOut"][];
+            /** Only Realized */
+            only_realized?: components["schemas"]["UnmatchedTradeOut"][];
+            /** Expected Pnl */
+            expected_pnl: number;
+            /** Realized Pnl */
+            realized_pnl: number;
+            /** Pnl From Slippage */
+            pnl_from_slippage: number;
+            /** Pnl From Unmatched */
+            pnl_from_unmatched: number;
+            /** Pnl Unexplained */
+            pnl_unexplained: number;
+            /** Median Entry Slippage Points */
+            median_entry_slippage_points?: number | null;
+            /** P90 Entry Slippage Points */
+            p90_entry_slippage_points?: number | null;
+            /**
+             * Rejected Orders
+             * @default 0
+             */
+            rejected_orders: number;
+            /**
+             * Partial Fills
+             * @default 0
+             */
+            partial_fills: number;
+            /**
+             * Bars Processed
+             * @default 0
+             */
+            bars_processed: number;
+            /**
+             * Verdict
+             * @default
+             */
+            verdict: string;
+            /** Warnings */
+            warnings?: string[];
+        };
+        /** LiveDetailOut */
+        LiveDetailOut: {
+            session: components["schemas"]["LiveSessionOut"];
+            /** Events */
+            events?: components["schemas"]["LiveEventOut"][];
+            /** Trades */
+            trades?: components["schemas"]["LiveTradeOut"][];
+        };
+        /**
+         * LiveEventOut
+         * @description One line of the diary, newest first in the listing.
+         */
+        LiveEventOut: {
+            /**
+             * At
+             * Format: date-time
+             */
+            at: string;
+            /** Kind */
+            kind: string;
+            /** Bar Time */
+            bar_time?: string | null;
+            /** Detail */
+            detail?: {
+                [key: string]: unknown;
+            };
+        };
+        /**
+         * LiveSessionOut
+         * @description One runner's diary, summarized. Never carries account identity.
+         */
+        LiveSessionOut: {
+            /** Session Id */
+            session_id: string;
+            /** Symbol */
+            symbol: string;
+            /** Timeframe */
+            timeframe: string;
+            /** Strategy Id */
+            strategy_id?: string | null;
+            /** Engine Version */
+            engine_version?: string | null;
+            /**
+             * Dry Run
+             * @default true
+             */
+            dry_run: boolean;
+            /** Account Guard */
+            account_guard?: {
+                [key: string]: unknown;
+            } | null;
+            /** Initial Equity */
+            initial_equity?: number | null;
+            /**
+             * Bars Processed
+             * @default 0
+             */
+            bars_processed: number;
+            /**
+             * Trades
+             * @default 0
+             */
+            trades: number;
+            /**
+             * Errors
+             * @default 0
+             */
+            errors: number;
+            /** First Bar */
+            first_bar?: string | null;
+            /** Last Bar */
+            last_bar?: string | null;
+            /** Last Event At */
+            last_event_at?: string | null;
+            /**
+             * Stopped
+             * @default false
+             */
+            stopped: boolean;
+            /**
+             * Running
+             * @default false
+             */
+            running: boolean;
+            /**
+             * Has Lock
+             * @default false
+             */
+            has_lock: boolean;
+            /** Pid */
+            pid?: number | null;
+        };
+        /** LiveTradeOut */
+        LiveTradeOut: {
+            /** Direction */
+            direction: number;
+            /**
+             * Entry Time
+             * Format: date-time
+             */
+            entry_time: string;
+            /** Entry Price */
+            entry_price: number;
+            /** Stop Level */
+            stop_level?: number | null;
+            /** Target Level */
+            target_level?: number | null;
+            /**
+             * Exit Time
+             * Format: date-time
+             */
+            exit_time: string;
+            /** Exit Price */
+            exit_price: number;
+            /** Exit Reason */
+            exit_reason: string;
+            /** Lots */
+            lots: number;
+            /** Bars Held */
+            bars_held: number;
+            /** Session Bars Held */
+            session_bars_held: number;
+            /** Gross Pnl */
+            gross_pnl: number;
+            /** Spread Points */
+            spread_points: number;
+            /** Spread Cost */
+            spread_cost: number;
+            /** Commission */
+            commission: number;
+            /** Swap */
+            swap: number;
+            /** Net Pnl */
+            net_pnl: number;
+            /** Risk Money */
+            risk_money: number;
+            /** R Multiple */
+            r_multiple?: number | null;
+            /**
+             * Ambiguous
+             * @default false
+             */
+            ambiguous: boolean;
+            /**
+             * Crossed Gap
+             * @default false
+             */
+            crossed_gap: boolean;
+        };
         /** MetricsOut */
         MetricsOut: {
             /** Label */
@@ -1204,6 +1632,26 @@ export interface components {
             /** Logits */
             logits?: number[];
         };
+        /**
+         * ParamOut
+         * @description One indicator parameter, as the registry declares it.
+         */
+        ParamOut: {
+            /** Name */
+            name: string;
+            /** Type */
+            type: string;
+            /** Default */
+            default?: unknown;
+            /** Minimum */
+            minimum?: number | null;
+            /** Maximum */
+            maximum?: number | null;
+            /** Exclusive Minimum */
+            exclusive_minimum?: number | null;
+            /** Choices */
+            choices?: string[] | null;
+        };
         /** PermutationRequest */
         PermutationRequest: {
             /** Run Id */
@@ -1295,6 +1743,60 @@ export interface components {
             /** Block Bars */
             block_bars?: number | null;
         };
+        /** PreviewRequest */
+        PreviewRequest: {
+            /** Strategy Id */
+            strategy_id?: string | null;
+            /** Spec */
+            spec?: {
+                [key: string]: unknown;
+            } | null;
+            config: components["schemas"]["RunConfigIn"];
+        };
+        /** PreviewResponse */
+        PreviewResponse: {
+            /** Strategy Id */
+            strategy_id: string;
+            /** Symbol */
+            symbol: string;
+            /** Timeframe */
+            timeframe: string;
+            /** Period Start */
+            period_start?: string | null;
+            /** Period End */
+            period_end?: string | null;
+            /** Bars */
+            bars: number;
+            /** Signals Long */
+            signals_long: number;
+            /** Signals Short */
+            signals_short: number;
+            /** Signals Total */
+            signals_total: number;
+            /** Signals Per 1000 Bars */
+            signals_per_1000_bars: number;
+            /** Trades Upper Bound */
+            trades_upper_bound: number;
+            /** Min Judgeable Trades */
+            min_judgeable_trades: number;
+            /** Judgeable */
+            judgeable: boolean;
+            /** Median Spread Points */
+            median_spread_points?: number | null;
+            /** Spread Source */
+            spread_source: string;
+            breakeven?: components["schemas"]["BreakevenPriorOut"] | null;
+            ambiguity?: components["schemas"]["AmbiguityPriorOut"] | null;
+            tradability?: components["schemas"]["TradabilityCellOut"] | null;
+            attempts?: components["schemas"]["AttemptsPanelOut"] | null;
+            /**
+             * Verdict
+             * @default
+             */
+            verdict: string;
+            /** Warnings */
+            warnings?: string[];
+        };
         /** QualityOut */
         QualityOut: {
             /** Rows */
@@ -1317,6 +1819,8 @@ export interface components {
             zero_spread: number;
             /** Session Confidence */
             session_confidence: string;
+            /** Session Clock */
+            session_clock: string;
             /** Text */
             text: string;
             /** Worst Gaps */
@@ -1402,6 +1906,11 @@ export interface components {
              * @default 0.5
              */
             session_threshold: number;
+            /**
+             * Per Bar Spread Quantile
+             * @default 0.5
+             */
+            per_bar_spread_quantile: number;
         };
         /** RunDetailOut */
         RunDetailOut: {
@@ -1459,6 +1968,13 @@ export interface components {
              * @default true
              */
             symbol_spec_registered: boolean;
+            costs?: components["schemas"]["SpreadRealismOut"] | null;
+            spread_coverage?: components["schemas"]["SpreadCoverageOut"] | null;
+            /**
+             * Aggregated Spread Cost
+             * @default false
+             */
+            aggregated_spread_cost: boolean;
         };
         /** RunSummaryOut */
         RunSummaryOut: {
@@ -1508,6 +2024,34 @@ export interface components {
             win_rate: number | null;
             /** Ambiguous Trades */
             ambiguous_trades: number | null;
+            /**
+             * Aggregated Spread Cost
+             * @default false
+             */
+            aggregated_spread_cost: boolean;
+        };
+        /** SaveStrategyRequest */
+        SaveStrategyRequest: {
+            /** Spec */
+            spec: {
+                [key: string]: unknown;
+            };
+            /**
+             * Overwrite
+             * @default false
+             */
+            overwrite: boolean;
+        };
+        /** SaveStrategyResponse */
+        SaveStrategyResponse: {
+            /** Id */
+            id: string;
+            /** File */
+            file: string;
+            /** Created */
+            created: boolean;
+            /** Message */
+            message: string;
         };
         /** ScreenCellOut */
         ScreenCellOut: {
@@ -1523,6 +2067,27 @@ export interface components {
             status: string;
             /** Error */
             error?: string | null;
+            /**
+             * Counts As Attempt
+             * @default true
+             */
+            counts_as_attempt: boolean;
+            /**
+             * Tradable
+             * @default true
+             */
+            tradable: boolean;
+            /**
+             * Tradability Judged
+             * @default true
+             */
+            tradability_judged: boolean;
+            /** Spread Atr Ratio */
+            spread_atr_ratio?: number | null;
+            /** Spread Stop Share */
+            spread_stop_share?: number | null;
+            /** Tradability Reason */
+            tradability_reason?: string | null;
             /** Gate Passed */
             gate_passed?: boolean | null;
             /** Gate Signals */
@@ -1563,12 +2128,44 @@ export interface components {
             ambiguous_share?: number | null;
             /** Band Money */
             band_money?: number | null;
+            /** Signals */
+            signals?: number | null;
+            /** Gate Rejected */
+            gate_rejected?: number | null;
+            /** Gate Rejected Share */
+            gate_rejected_share?: number | null;
+            /** Structural Rejected Share */
+            structural_rejected_share?: number | null;
+            /** Discretionary Rejected Share */
+            discretionary_rejected_share?: number | null;
+            /** Equity Rejected Share */
+            equity_rejected_share?: number | null;
+            /** Gates Materially Altered */
+            gates_materially_altered?: boolean | null;
             /** Top Gate */
             top_gate?: string | null;
             /** Top Gate Share */
             top_gate_share?: number | null;
             /** Gate Warnings */
             gate_warnings?: string[];
+            /** Spread Charged Median */
+            spread_charged_median?: number | null;
+            /** Spread Zero Share */
+            spread_zero_share?: number | null;
+            /** Spread Trustworthy */
+            spread_trustworthy?: boolean | null;
+            /** Spread Measured Share */
+            spread_measured_share?: number | null;
+            /** Spread Assumed Bars */
+            spread_assumed_bars?: number | null;
+            /** Relaxed Trades */
+            relaxed_trades?: number | null;
+            /** Relaxed Net Pnl */
+            relaxed_net_pnl?: number | null;
+            /** Relaxed Sharpe Per Trade */
+            relaxed_sharpe_per_trade?: number | null;
+            /** Relaxed Verdict */
+            relaxed_verdict?: string | null;
             /** Permutation P Value */
             permutation_p_value?: number | null;
             /** Permutation Kind */
@@ -1630,6 +2227,7 @@ export interface components {
             panel: components["schemas"]["TrialPanelOut"];
             /** Thresholds */
             thresholds?: components["schemas"]["ThresholdRowOut"][];
+            tradability?: components["schemas"]["TradabilityOut"] | null;
             /** Elapsed Seconds */
             elapsed_seconds: number;
             /** Engine Version */
@@ -1638,6 +2236,10 @@ export interface components {
             verdict: string;
             /** Warnings */
             warnings?: string[];
+            /** Manifest */
+            manifest?: {
+                [key: string]: unknown;
+            } | null;
         };
         /** ScreenRequest */
         ScreenRequest: {
@@ -1658,6 +2260,71 @@ export interface components {
              * @default 200
              */
             permutation_iterations: number;
+        };
+        /**
+         * SpreadCoverageOut
+         * @description How much of a run's period had an M1 sample to measure the spread on.
+         *
+         *     A run whose `measured_share` is low was charged a constant taken from a
+         *     different period. That is not wrong, but it is an assumption, and it is
+         *     the assumption most able to move a marginal result.
+         */
+        SpreadCoverageOut: {
+            /** Symbol */
+            symbol: string;
+            /** Timeframe */
+            timeframe: string;
+            /** Bars */
+            bars: number;
+            /** Measured Bars */
+            measured_bars: number;
+            /** Assumed Bars */
+            assumed_bars: number;
+            /** Measured Share */
+            measured_share: number;
+            /** Fully Measured */
+            fully_measured: boolean;
+            /** M1 Window Start */
+            m1_window_start?: string | null;
+            /** M1 Window End */
+            m1_window_end?: string | null;
+            /** Verdict */
+            verdict: string;
+        };
+        /**
+         * SpreadRealismOut
+         * @description What a run's spread policy charged, and whether a fill could have paid it.
+         */
+        SpreadRealismOut: {
+            /** Mode */
+            mode: string;
+            /** Value */
+            value?: number | null;
+            /** Timeframe */
+            timeframe: string;
+            /** Median Charged Points */
+            median_charged_points: number;
+            /** Mean Charged Points */
+            mean_charged_points: number;
+            /** Zero Charged Share */
+            zero_charged_share: number;
+            /**
+             * Reads Aggregated Column
+             * @default false
+             */
+            reads_aggregated_column: boolean;
+            /**
+             * Reconstructed From M1
+             * @default false
+             */
+            reconstructed_from_m1: boolean;
+            /**
+             * Trustworthy
+             * @default true
+             */
+            trustworthy: boolean;
+            /** Warnings */
+            warnings?: string[];
         };
         /** StabilityRowOut */
         StabilityRowOut: {
@@ -1705,7 +2372,7 @@ export interface components {
              * Source
              * @enum {string}
              */
-            source: "terminal" | "cache";
+            source: "terminal" | "cache" | "fixture";
             /** Server Timezone */
             server_timezone?: string | null;
             /**
@@ -1809,6 +2476,102 @@ export interface components {
             verdict: string;
             /** Warnings */
             warnings?: string[];
+        };
+        /**
+         * TradabilityCellOut
+         * @description One instrument x timeframe pair, and whether it may be tested at all.
+         */
+        TradabilityCellOut: {
+            /** Symbol */
+            symbol: string;
+            /** Timeframe */
+            timeframe: string;
+            /** Bars */
+            bars: number;
+            /** First Bar */
+            first_bar?: string | null;
+            /** Last Bar */
+            last_bar?: string | null;
+            /** Median Spread Points */
+            median_spread_points?: number | null;
+            /** P90 Spread Points */
+            p90_spread_points?: number | null;
+            /** Spread Source */
+            spread_source: string;
+            /** Median Atr Points */
+            median_atr_points?: number | null;
+            /** Spread Atr Ratio */
+            spread_atr_ratio?: number | null;
+            /** P90 Spread Atr Ratio */
+            p90_spread_atr_ratio?: number | null;
+            /** Spread Stop Share */
+            spread_stop_share?: number | null;
+            /** Stop Atr Mult */
+            stop_atr_mult: number;
+            /** Max Ratio */
+            max_ratio: number;
+            /** Tradable */
+            tradable: boolean;
+            /** Judged */
+            judged: boolean;
+            /** Reason */
+            reason: string;
+        };
+        /**
+         * TradabilityOut
+         * @description Stage zero of the funnel: what the broker's spread makes untestable.
+         */
+        TradabilityOut: {
+            /** Cells */
+            cells?: components["schemas"]["TradabilityCellOut"][];
+            /** Max Ratio */
+            max_ratio: number;
+            /** Atr Period */
+            atr_period: number;
+            /** Stop Atr Mult */
+            stop_atr_mult: number;
+            /** Tradable */
+            tradable: number;
+            /** Excluded */
+            excluded: number;
+            /** Unjudged */
+            unjudged: number;
+            /** Warnings */
+            warnings?: string[];
+        };
+        /**
+         * TradeDeviationOut
+         * @description One trade both records hold, and where they disagree.
+         */
+        TradeDeviationOut: {
+            /**
+             * Entry Time
+             * Format: date-time
+             */
+            entry_time: string;
+            /** Direction */
+            direction: number;
+            /** Entry Slippage Points */
+            entry_slippage_points?: number | null;
+            /** Exit Slippage Points */
+            exit_slippage_points?: number | null;
+            /** Entry Slippage Money */
+            entry_slippage_money?: number | null;
+            /** Pnl Difference */
+            pnl_difference: number;
+            /** Lots Expected */
+            lots_expected: number;
+            /** Lots Realized */
+            lots_realized: number;
+            /** Exit Reason Expected */
+            exit_reason_expected: string;
+            /** Exit Reason Realized */
+            exit_reason_realized: string;
+            /**
+             * Exit Reason Differs
+             * @default false
+             */
+            exit_reason_differs: boolean;
         };
         /** TradeOut */
         TradeOut: {
@@ -1932,6 +2695,13 @@ export interface components {
             verdict: string;
             /** Assumptions */
             assumptions?: string[];
+            /** Spread Measured Share Median */
+            spread_measured_share_median?: number | null;
+            /**
+             * Cells With No Measured Spread
+             * @default 0
+             */
+            cells_with_no_measured_spread: number;
         };
         /**
          * UncertaintyOut
@@ -1976,6 +2746,24 @@ export interface components {
             /** Warnings */
             warnings?: string[];
         };
+        /** UnmatchedTradeOut */
+        UnmatchedTradeOut: {
+            /**
+             * Entry Time
+             * Format: date-time
+             */
+            entry_time: string;
+            /** Direction */
+            direction: number;
+            /** Net Pnl */
+            net_pnl: number;
+            /** Exit Reason */
+            exit_reason: string;
+            /** Side */
+            side: string;
+            /** Reason */
+            reason: string;
+        };
         /** ValidateRequest */
         ValidateRequest: {
             /** Spec */
@@ -2008,6 +2796,42 @@ export interface components {
             input?: unknown;
             /** Context */
             ctx?: Record<string, never>;
+        };
+        /**
+         * VocabularyOut
+         * @description Everything the strategy editor is allowed to build out of.
+         *
+         *     Served rather than duplicated in the frontend: a tenth indicator, a new
+         *     parameter or a renamed bar field has to reach the editor by appearing
+         *     here, and cannot reach it by someone remembering to update a second list.
+         */
+        VocabularyOut: {
+            /** Schema Version */
+            schema_version: number;
+            /** Indicators */
+            indicators: components["schemas"]["IndicatorOut"][];
+            /** Features */
+            features: string[];
+            /** Bar Fields */
+            bar_fields: string[];
+            /** Price Sources */
+            price_sources: string[];
+            /** Comparison Operators */
+            comparison_operators: string[];
+            /** Group Operators */
+            group_operators: string[];
+            /** Trend Operators */
+            trend_operators: string[];
+            /** Exit Level Types */
+            exit_level_types: string[];
+            /** Sizing Types */
+            sizing_types: string[];
+            /** Timeframes */
+            timeframes: string[];
+            /** Spread Modes */
+            spread_modes: string[];
+            /** Swap Modes */
+            swap_modes: string[];
         };
         /**
          * WalkForwardMetricsOut
@@ -2262,6 +3086,39 @@ export interface operations {
             };
         };
     };
+    save_strategy_api_strategies_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SaveStrategyRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SaveStrategyResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_strategy_api_strategies__strategy_id__get: {
         parameters: {
             query?: never;
@@ -2313,6 +3170,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ValidateResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_vocabulary_api_vocabulary_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VocabularyOut"];
+                };
+            };
+        };
+    };
+    post_preview_api_strategies_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PreviewRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PreviewResponse"];
                 };
             };
             /** @description Validation Error */
@@ -2805,6 +3715,124 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ScreenJobOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_tradability_api_tradability_get: {
+        parameters: {
+            query?: {
+                /** @description comma-separated; default is everything cached */
+                symbols?: string;
+                timeframes?: string;
+                max_spread_atr?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TradabilityOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_live_sessions_api_live_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LiveSessionOut"][];
+                };
+            };
+        };
+    };
+    get_live_session_api_live__session_id__get: {
+        parameters: {
+            query?: {
+                events?: number;
+            };
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LiveDetailOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_live_comparison_api_live__session_id__comparison_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LiveComparisonOut"];
                 };
             };
             /** @description Validation Error */

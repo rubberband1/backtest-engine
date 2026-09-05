@@ -17,22 +17,22 @@ from core.indicators.functions import (
 from core.indicators.registry import IndicatorDef, available, get, register
 
 __all__ = [
+    "IndicatorDef",
     "atr",
+    "available",
     "bollinger",
     "crossed_above",
     "crossed_below",
     "donchian",
     "ema",
     "falling",
+    "get",
     "macd",
+    "register",
     "rising",
     "roc",
     "rsi",
     "sma",
     "stoch",
     "true_range",
-    "IndicatorDef",
-    "available",
-    "get",
-    "register",
 ]

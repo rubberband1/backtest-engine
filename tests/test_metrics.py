@@ -49,7 +49,7 @@ def trades_from(pnls: list[float], start: str = "2024-01-01") -> pd.DataFrame:
 
 def equity_from(pnls: list[float], initial: float = 100.0) -> pd.Series:
     index = pd.date_range("2024-01-01", periods=len(pnls) + 1, freq="1h", tz="UTC")
-    return pd.Series(initial + np.cumsum([0.0] + pnls), index=index, name="equity")
+    return pd.Series(initial + np.cumsum([0.0, *pnls]), index=index, name="equity")
 
 
 def test_profit_factor_expectancy_and_winrate() -> None:

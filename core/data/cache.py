@@ -7,24 +7,44 @@ pandas versions.
 Coverage is stored as a list of UTC intervals, not a single range: two
 requests far apart in time must not make the hole in between pass for
 "already downloaded".
+
+Alongside coverage, each interval records **where it came from**. Deep
+history can arrive from the live feed or be decoded out of the terminal's own
+.hc cache, and the two are not interchangeable: the .hc file holds whatever
+was downloaded up to the last connection, which may be stale or partial.
+Losing that distinction turns "my backtest used broker data" into an
+unverifiable claim, so provenance travels with the bars.
 """
 from __future__ import annotations
 
 import json
 import logging
 import shutil
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timezone, tzinfo
 from pathlib import Path
-from typing import Callable, Iterable, Sequence
 
 import pandas as pd
 
-from core.data.provider import BAR_COLUMNS, Timeframe, empty_bars, normalize_bars
+from core.data.provider import (
+    Timeframe,
+    bar_columns_for,
+    empty_bars,
+    normalize_bars,
+    rename_aggregated_spread,
+)
 
 logger = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 1
+# 2 added per-interval provenance. Version 1 files are still read: their
+# coverage is kept and reported as provenance "unrecorded", which is the
+# truth about them rather than a guess dressed up as one.
+SCHEMA_VERSION = 2
+READABLE_SCHEMA_VERSIONS = (1, 2)
+
+# What supplied a stretch of bars, when the meta file predates provenance.
+UNRECORDED_SOURCE = "unrecorded"
 
 Interval = tuple[datetime, datetime]
 FetchFn = Callable[[str, Timeframe, datetime, datetime], pd.DataFrame]
@@ -86,6 +106,33 @@ def split_by_year(interval: Interval) -> list[tuple[int, Interval]]:
     return out
 
 
+@dataclass(frozen=True)
+class SourceInterval:
+    """Which source supplied one stretch of the coverage, and when."""
+
+    source: str
+    start: datetime
+    end: datetime
+    recorded_at: datetime
+
+    def to_json(self) -> dict[str, object]:
+        return {
+            "source": self.source,
+            "start_utc": self.start.isoformat(),
+            "end_utc": self.end.isoformat(),
+            "recorded_at_utc": self.recorded_at.isoformat(),
+        }
+
+    @classmethod
+    def from_json(cls, payload: dict[str, object]) -> SourceInterval:
+        return cls(
+            source=str(payload["source"]),
+            start=datetime.fromisoformat(str(payload["start_utc"])),
+            end=datetime.fromisoformat(str(payload["end_utc"])),
+            recorded_at=datetime.fromisoformat(str(payload["recorded_at_utc"])),
+        )
+
+
 @dataclass
 class CacheMeta:
     """Metadata stored next to each Parquet file."""
@@ -95,11 +142,24 @@ class CacheMeta:
     timeframe: str
     year: int
     coverage: list[Interval] = field(default_factory=list)
+    provenance: list[SourceInterval] = field(default_factory=list)
     rows: int = 0
     first_bar: datetime | None = None
     last_bar: datetime | None = None
     downloaded_at: datetime | None = None
     server_timezone: str | None = None
+
+    @property
+    def sources(self) -> list[str]:
+        """Distinct sources behind this file, in first-recorded order."""
+        seen: list[str] = []
+        for entry in self.provenance:
+            if entry.source not in seen:
+                seen.append(entry.source)
+        # coverage with no provenance entry behind it predates the field
+        if self.coverage and not self.provenance:
+            seen.append(UNRECORDED_SOURCE)
+        return seen
 
     def to_json(self) -> dict[str, object]:
         return {
@@ -108,6 +168,7 @@ class CacheMeta:
             "timeframe": self.timeframe,
             "year": self.year,
             "coverage_utc": [[a.isoformat(), b.isoformat()] for a, b in self.coverage],
+            "provenance": [entry.to_json() for entry in self.provenance],
             "rows": self.rows,
             "first_bar_utc": self.first_bar.isoformat() if self.first_bar else None,
             "last_bar_utc": self.last_bar.isoformat() if self.last_bar else None,
@@ -118,22 +179,27 @@ class CacheMeta:
         }
 
     @classmethod
-    def from_json(cls, payload: dict[str, object]) -> "CacheMeta":
+    def from_json(cls, payload: dict[str, object]) -> CacheMeta:
         def parse(value: object) -> datetime | None:
             return datetime.fromisoformat(str(value)) if value else None
 
         coverage_raw = payload.get("coverage_utc") or []
         coverage = [
             (datetime.fromisoformat(a), datetime.fromisoformat(b))
-            for a, b in coverage_raw  # type: ignore[misc]
+            for a, b in coverage_raw
+        ]
+        provenance = [
+            SourceInterval.from_json(entry)
+            for entry in (payload.get("provenance") or [])
         ]
         return cls(
-            schema_version=int(payload["schema_version"]),  # type: ignore[arg-type]
+            schema_version=int(payload["schema_version"]),
             symbol=str(payload["symbol"]),
             timeframe=str(payload["timeframe"]),
-            year=int(payload["year"]),  # type: ignore[arg-type]
+            year=int(payload["year"]),
             coverage=coverage,
-            rows=int(payload.get("rows", 0)),  # type: ignore[arg-type]
+            provenance=provenance,
+            rows=int(payload.get("rows", 0)),
             first_bar=parse(payload.get("first_bar_utc")),
             last_bar=parse(payload.get("last_bar_utc")),
             downloaded_at=parse(payload.get("downloaded_at_utc")),
@@ -172,24 +238,34 @@ class ParquetCache:
         if not meta_path.exists():
             return None
         meta = CacheMeta.from_json(json.loads(meta_path.read_text(encoding="utf-8")))
-        if meta.schema_version != SCHEMA_VERSION:
+        if meta.schema_version not in READABLE_SCHEMA_VERSIONS:
             logger.warning(
-                "stale schema %d in %s (expected %d): treating the cache as empty",
+                "unreadable schema %d in %s (this build reads %s): treating the "
+                "cache as empty",
                 meta.schema_version,
                 meta_path,
-                SCHEMA_VERSION,
+                READABLE_SCHEMA_VERSIONS,
             )
             return None
         return meta
 
     def read_year(self, symbol: str, timeframe: Timeframe, year: int) -> pd.DataFrame:
+        """Bars for one year, with the spread field named for its timeframe.
+
+        This is the door every backtest's data comes through, so it is where
+        the rename happens: above M1 the file's `spread` column comes back as
+        `min_spread_m1`, whatever the file on disk calls it. Nothing
+        downstream can then charge it as a fill cost by writing `bars["spread"]`
+        - that name raises instead.
+        """
         data_path, _ = self.paths(symbol, timeframe, year)
         if not data_path.exists():
-            return empty_bars()
+            return empty_bars(timeframe)
         frame = pd.read_parquet(data_path)
         frame.index = pd.DatetimeIndex(frame.index).tz_convert("UTC")
         frame.index.name = "time"
-        return normalize_bars(frame, BAR_COLUMNS)
+        frame = rename_aggregated_spread(frame, timeframe)
+        return normalize_bars(frame, bar_columns_for(timeframe))
 
     def coverage(self, symbol: str, timeframe: Timeframe, year: int) -> list[Interval]:
         meta = self.read_meta(symbol, timeframe, year)
@@ -214,28 +290,44 @@ class ParquetCache:
         bars: pd.DataFrame,
         covered: Sequence[Interval],
         server_timezone: str | None = None,
+        source: str = UNRECORDED_SOURCE,
     ) -> CacheMeta:
         data_path, meta_path = self.paths(symbol, timeframe, year)
         data_path.parent.mkdir(parents=True, exist_ok=True)
 
         existing = self.read_year(symbol, timeframe, year)
-        merged = normalize_bars(pd.concat([existing, bars]), BAR_COLUMNS) if len(bars) else existing
+        columns = bar_columns_for(timeframe)
+        incoming = rename_aggregated_spread(bars, timeframe)
+        merged = (
+            normalize_bars(pd.concat([existing, incoming]), columns)
+            if len(bars)
+            else existing
+        )
         y_start, y_end = year_bounds(year)
         merged = merged[(merged.index >= y_start) & (merged.index < y_end)]
         merged.to_parquet(data_path, engine="pyarrow", compression="snappy")
 
         previous = self.read_meta(symbol, timeframe, year)
         coverage = merge_intervals(list(previous.coverage if previous else []) + list(covered))
+        now = datetime.now(timezone.utc)
+        # provenance intervals are appended, never merged: two stretches from
+        # two sources must stay distinguishable even when they are adjacent
+        provenance = list(previous.provenance if previous else []) + [
+            SourceInterval(source=source, start=_utc(a), end=_utc(b), recorded_at=now)
+            for a, b in covered
+            if b > a
+        ]
         meta = CacheMeta(
             schema_version=SCHEMA_VERSION,
             symbol=symbol,
             timeframe=timeframe.name,
             year=year,
             coverage=coverage,
+            provenance=provenance,
             rows=int(len(merged)),
             first_bar=merged.index.min().to_pydatetime() if len(merged) else None,
             last_bar=merged.index.max().to_pydatetime() if len(merged) else None,
-            downloaded_at=datetime.now(timezone.utc),
+            downloaded_at=now,
             server_timezone=server_timezone
             or (previous.server_timezone if previous else None),
         )
@@ -255,14 +347,24 @@ class ParquetCache:
         end: datetime,
         fetch: FetchFn,
         server_timezone: tzinfo | str | None = None,
+        source: str | None = None,
     ) -> pd.DataFrame:
-        """Returns the requested bars, downloading only the missing holes."""
+        """Returns the requested bars, downloading only the missing holes.
+
+        `source` names what `fetch` reads from and is written into the
+        metadata for every hole it fills. Left out, it is taken from the
+        fetcher itself when it can say (a bound provider method), because a
+        cache that cannot name its sources cannot be audited later.
+        """
         tf = Timeframe.parse(timeframe)
         start_utc, end_utc = _utc(start), _utc(end)
         if end_utc <= start_utc:
-            return empty_bars()
+            return empty_bars(tf)
 
         tz_label = str(server_timezone) if server_timezone is not None else None
+        origin = source or getattr(
+            getattr(fetch, "__self__", None), "source_name", UNRECORDED_SOURCE
+        )
         holes = self.missing_ranges(symbol, tf, start_utc, end_utc)
         if not holes:
             logger.info("%s %s: request served entirely from the cache", symbol, tf.name)
@@ -277,17 +379,17 @@ class ParquetCache:
                 slice_ = (
                     downloaded[(downloaded.index >= y_start) & (downloaded.index < y_end)]
                     if len(downloaded)
-                    else empty_bars()
+                    else empty_bars(tf)
                 )
-                self.write_year(symbol, tf, year, slice_, [piece], tz_label)
+                self.write_year(symbol, tf, year, slice_, [piece], tz_label, origin)
 
         parts = [
             self.read_year(symbol, tf, year) for year, _ in split_by_year((start_utc, end_utc))
         ]
         parts = [p for p in parts if len(p)]
         if not parts:
-            return empty_bars()
-        out = normalize_bars(pd.concat(parts), BAR_COLUMNS)
+            return empty_bars(tf)
+        out = normalize_bars(pd.concat(parts), bar_columns_for(tf))
         return out[(out.index >= start_utc) & (out.index < end_utc)]
 
     # -- invalidation ----------------------------------------------------

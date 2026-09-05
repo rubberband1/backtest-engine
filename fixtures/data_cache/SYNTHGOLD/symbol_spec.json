@@ -1,0 +1,18 @@
+{
+  "read_at": "2024-01-01T00:00:00+00:00",
+  "spec": {
+    "name": "SYNTHGOLD",
+    "point": 0.01,
+    "digits": 2,
+    "contract_size": 100.0,
+    "tick_value": 1.0,
+    "tick_size": 0.01,
+    "volume_min": 0.01,
+    "volume_max": 20.0,
+    "volume_step": 0.01,
+    "swap_long": -19.5,
+    "swap_short": 8.4,
+    "currency_profit": "USD",
+    "trade_mode": "full"
+  }
+}

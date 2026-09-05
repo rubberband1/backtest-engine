@@ -1,3 +1,4 @@
+import { NumberField } from "../components/NumberField";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   api,
@@ -71,8 +72,20 @@ export function RunPage() {
         const first = strategyList[0];
         if (first) {
           setStrategyId(first.id);
-          setSymbol(first.symbol);
           setTimeframe(first.timeframe);
+          // A strategy names the instrument it was written for, and that
+          // instrument need not be in this cache - on a fresh clone serving
+          // the synthetic fixture it never is. Selecting it anyway leaves
+          // the <select> showing its first option while the state holds
+          // something else, so the page reports "no data" for a symbol the
+          // user can see is selected. Fall back to what is actually there.
+          const available = symbolList.symbols.map((entry) => entry.name);
+          const cached = symbolList.cached_symbols ?? [];
+          setSymbol(
+            available.includes(first.symbol)
+              ? first.symbol
+              : (cached[0] ?? available[0] ?? first.symbol),
+          );
         }
       })
       .catch(setLoadError);
@@ -81,6 +94,19 @@ export function RunPage() {
       if (pollTimer.current) window.clearInterval(pollTimer.current);
     };
   }, []);
+
+  // Whether the M1 sample spans the bars being run. Dates rather than counts:
+  // M1 is a different number of bars by construction, and what matters is
+  // whether it reaches both ends of the period.
+  function coversTheSamePeriod(bars: Coverage, minutes: Coverage | null): boolean {
+    if (!minutes || !minutes.start || !minutes.end || !bars.start || !bars.end) {
+      return false;
+    }
+    return (
+      Date.parse(minutes.start) <= Date.parse(bars.start) &&
+      Date.parse(minutes.end) >= Date.parse(bars.end)
+    );
+  }
 
   async function refreshRecent() {
     try {
@@ -92,17 +118,36 @@ export function RunPage() {
 
   // Cached coverage decides the bounds of the period: asking for dates that
   // do not exist is the most common way to get "no data".
+  //
+  // It also decides the spread policy. Per-bar above M1 is rebuilt from the
+  // M1 bars of the same period, and the engine refuses the run outright when
+  // they are not there - correctly, but as the *default* on a cache holding
+  // only hourly bars it means the first backtest anyone tries fails. So the
+  // default follows the data: per bar where M1 covers the period, a measured
+  // constant where it does not. Either can still be chosen by hand.
   useEffect(() => {
     if (!symbol) return;
     let cancelled = false;
     setCoverageBusy(true);
-    api
-      .coverage(symbol, timeframe)
-      .then((data) => {
+    Promise.all([
+      api.coverage(symbol, timeframe),
+      timeframe === "M1"
+        ? Promise.resolve(null)
+        : api.coverage(symbol, "M1").catch(() => null),
+    ])
+      .then(([data, minutes]) => {
         if (cancelled) return;
         setCoverage(data);
         setStart(isoDateInput(data.start));
         setEnd(isoDateInput(data.end));
+        if (coversTheSamePeriod(data, minutes)) {
+          setSpreadMode("per_bar");
+        } else {
+          // the measured median, not a guess: it is what the instrument's
+          // own M1 sample says, and the panel states the period it came from
+          setSpreadMode("fixed");
+          setSpreadValue(minutes?.spread_median_points ?? data.spread_median_points ?? "");
+        }
       })
       .catch(() => !cancelled && setCoverage(null))
       .finally(() => !cancelled && setCoverageBusy(false));
@@ -127,6 +172,9 @@ export function RunPage() {
     commission_per_lot_per_side: commission,
     swap_mode: "points",
     session_threshold: 0.5,
+    // above M1 a per-bar spread is rebuilt from the M1 sample; the
+    // median is the point of that distribution a fill is charged at
+    per_bar_spread_quantile: 0.5,
   };
 
   const hasData = (coverage?.bars ?? 0) > 0;
@@ -303,13 +351,12 @@ export function RunPage() {
             </Field>
 
             <Field label="Initial equity" htmlFor="f-equity" hint="account currency">
-              <input
+              <NumberField
                 id="f-equity"
-                type="number"
                 min={1}
                 step={1}
                 value={equity}
-                onChange={(event) => setEquity(Number(event.target.value))}
+                onChange={(value) => setEquity(value ?? 0)}
               />
             </Field>
 
@@ -341,28 +388,24 @@ export function RunPage() {
                     : "fixed cost on every fill"
               }
             >
-              <input
+              <NumberField
                 id="f-spread-value"
-                type="number"
                 step={spreadMode === "quantile" ? 0.05 : 1}
                 min={0}
                 max={spreadMode === "quantile" ? 1 : undefined}
                 disabled={spreadMode === "per_bar"}
-                value={spreadValue}
-                onChange={(event) =>
-                  setSpreadValue(event.target.value === "" ? "" : Number(event.target.value))
-                }
+                value={spreadValue === "" ? null : spreadValue}
+                onChange={(value) => setSpreadValue(value ?? "")}
               />
             </Field>
 
             <Field label="Commission" htmlFor="f-commission" hint="per lot, per side">
-              <input
+              <NumberField
                 id="f-commission"
-                type="number"
                 min={0}
                 step={0.5}
                 value={commission}
-                onChange={(event) => setCommission(Number(event.target.value))}
+                onChange={(value) => setCommission(value ?? 0)}
               />
             </Field>
           </div>

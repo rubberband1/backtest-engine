@@ -16,6 +16,7 @@ import numpy as np
 import pandas as pd
 
 from core.indicators import functions as f
+from core.indicators.registry import missing_column_reason
 from core.strategy import spec as sp
 from core.strategy.features import compute_features
 
@@ -77,6 +78,8 @@ class _Context:
             return pd.Series(operand.const, index=self.index, dtype="float64")
         if isinstance(operand, sp.BarOperand):
             column = _BAR_ALIASES.get(operand.bar, operand.bar)
+            if column not in self.bars.columns:
+                raise KeyError(missing_column_reason(self.bars, column))
             return self.bars[column].astype("float64")
         if isinstance(operand, sp.FeatureOperand):
             return self.features[operand.feature]

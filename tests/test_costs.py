@@ -4,7 +4,6 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
-import pandas as pd
 import pytest
 
 from core.engine.backtester import BacktestConfig, run_backtest
@@ -82,7 +81,7 @@ def test_spread_policy_missing_parameters() -> None:
         SpreadPolicy(mode="fixed").series(bars)
     with pytest.raises(ValueError, match="quantile"):
         SpreadPolicy(mode="quantile", value=2.0).series(bars)
-    with pytest.raises(ValueError, match="'spread' column"):
+    with pytest.raises(ValueError, match="no spread field at all"):
         SpreadPolicy(mode="per_bar").series(bars.drop(columns="spread"))
 
 

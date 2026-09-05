@@ -71,3 +71,33 @@ def read_hc_utc(path: Path | str, server_tz: tzinfo) -> pd.DataFrame:
         df["time"].astype("int64") // 10**9, server_tz
     )
     return normalize_bars(frame, BAR_COLUMNS)
+
+
+def find_hc(data_path: Path | str, symbol: str, timeframe: str) -> Path | None:
+    """Locates the .hc file for a pair under a terminal data directory.
+
+    Layout: `bases/<trade server>/history/<symbol>/cache/<TF>.hc`. The server
+    folder is not passed in because a terminal that has been logged into more
+    than one account holds several, and only one of them has the symbol: the
+    most recently written file wins, which is the account currently in use.
+    """
+    root = Path(data_path) / "bases"
+    if not root.exists():
+        return None
+    candidates = sorted(
+        root.glob(f"*/history/{symbol}/cache/{timeframe.upper()}.hc"),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
+    if not candidates:
+        logger.debug("no .hc cache for %s %s under %s", symbol, timeframe, root)
+        return None
+    if len(candidates) > 1:
+        logger.info(
+            "%s %s: %d .hc files, using the most recent (%s)",
+            symbol,
+            timeframe,
+            len(candidates),
+            candidates[0].parent.parent.parent.name,
+        )
+    return candidates[0]

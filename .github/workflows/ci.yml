@@ -1,0 +1,82 @@
+name: CI
+
+# The suite has to pass where nobody has a broker. Everything marked `mt5`
+# needs a running MetaTrader 5 terminal and is excluded here; everything else
+# runs against generated data or the synthetic fixture committed in
+# `fixtures/data_cache/`, which is what makes this job meaningful rather than
+# a check that the imports resolve.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: tests ${{ matrix.os }} / py${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python: ["3.10", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install
+        run: python -m pip install --upgrade pip && python -m pip install -e ".[dev]"
+
+      # `test_regenerating_the_fixture_reproduces_the_committed_bars` rebuilds
+      # the committed dataset and diffs it, and the golden references are
+      # measured on it - so this one command covers the data as well as the
+      # engine.
+      - name: Tests
+        run: python -m pytest -q -m "not mt5" --durations=10
+
+  lint:
+    name: ruff + mypy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Install
+        run: python -m pip install --upgrade pip && python -m pip install -e ".[dev]"
+      - name: ruff
+        run: python -m ruff check .
+      - name: mypy
+        run: python -m mypy
+
+  ui:
+    name: typecheck + build the dashboard
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+      - run: npm ci
+        working-directory: ui
+      - run: npx tsc --noEmit
+        working-directory: ui
+      - run: npm run build
+        working-directory: ui

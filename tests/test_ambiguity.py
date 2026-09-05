@@ -160,9 +160,10 @@ def test_a_spec_without_both_levels_has_no_ambiguity_to_estimate() -> None:
 
 def test_the_engine_and_the_estimate_agree_on_a_run_with_ambiguity() -> None:
     """A bar wide enough to hold both levels produces exactly the ambiguous trades."""
+    from zoneinfo import ZoneInfo
+
     from core.engine.backtester import BacktestConfig, run_backtest
     from core.engine.costs import CostModel, SpreadPolicy
-    from zoneinfo import ZoneInfo
 
     spec = _prior_spec(100, 100)
     bars = bars_from(

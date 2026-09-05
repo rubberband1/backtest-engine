@@ -103,9 +103,9 @@ class EdgeReport:
     verdict: str = ""
     # a-priori break-even win rate: depends only on the spec and the average
     # spread, so it belongs here, before any backtest (see metrics.breakeven)
-    breakeven_prior: "dict[str, object] | None" = None
+    breakeven_prior: dict[str, object] | None = None
     # a-priori share of trades a bar-resolution backtest cannot settle
-    ambiguity_prior: "dict[str, object] | None" = None
+    ambiguity_prior: dict[str, object] | None = None
 
     def as_dict(self) -> dict[str, object]:
         return json_safe({
@@ -413,7 +413,7 @@ def edge_report(
     strategy: StrategySpec,
     bars: pd.DataFrame,
     point: float,
-    horizons: "list[int] | tuple[int, ...]" = DEFAULT_HORIZONS,
+    horizons: list[int] | tuple[int, ...] = DEFAULT_HORIZONS,
     spread: SpreadPolicy | None = None,
     min_observations: int = DEFAULT_MIN_OBSERVATIONS,
     significance: float = DEFAULT_SIGNIFICANCE,
@@ -443,7 +443,7 @@ def edge_report(
     long = long & ~both
     short = short & ~both
 
-    spread_points = (spread or SpreadPolicy()).series(bars).to_numpy()
+    spread_points = (spread or SpreadPolicy()).series(bars, timeframe).to_numpy()
 
     report = EdgeReport(
         symbol=strategy.instrument.symbol,
@@ -510,7 +510,10 @@ def edge_report(
             f"at the 5% level are expected by chance; confirm out-of-sample."
         )
     else:
-        best = max(report.stats, key=lambda s: (s.net_points if np.isfinite(s.net_points) else -1e9))
+        best = max(
+            report.stats,
+            key=lambda s: s.net_points if np.isfinite(s.net_points) else -1e9,
+        )
         report.verdict = (
             f"DOES NOT PASS: no horizon beats the spread with significance. "
             f"The best is {best.direction} at {best.horizon} bars with net "

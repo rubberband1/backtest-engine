@@ -1,3 +1,4 @@
+import { NumberField } from "../components/NumberField";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   api,
@@ -7,6 +8,8 @@ import {
   type ScreenReport,
   type Strategy,
   type SymbolList,
+  type Tradability,
+  type TradabilityCell,
 } from "../api/client";
 import { Badge, Empty, ErrorNotice, Field, Loading, Notice, Panel, Signed } from "../components/ui";
 import { int, num, pct, signedMoney } from "../format";
@@ -26,6 +29,8 @@ type SortKey =
   | "mean_r"
   | "win_rate"
   | "ambiguous_share"
+  | "gate_rejected_share"
+  | "spread_measured_share"
   | "permutation_p_value";
 
 const COLUMNS: { key: SortKey; label: string; num: boolean }[] = [
@@ -39,6 +44,12 @@ const COLUMNS: { key: SortKey; label: string; num: boolean }[] = [
   { key: "mean_r", label: "Mean R", num: true },
   { key: "win_rate", label: "Win rate", num: true },
   { key: "ambiguous_share", label: "Ambiguous", num: true },
+  { key: "gate_rejected_share", label: "Rejected by gates", num: true },
+  // how much of this cell's cost was measured. A campaign whose cells sit at
+  // 0% is not wrong, but every number in it rests on a spread taken from a
+  // period the cell does not cover, and that belongs on the row rather than
+  // in a caveat under the table.
+  { key: "spread_measured_share", label: "Spread measured", num: true },
   { key: "permutation_p_value", label: "Perm. p", num: true },
 ];
 
@@ -61,6 +72,7 @@ export function ScreenPage({ jobId }: { jobId: string | null }) {
   const [minTrades, setMinTrades] = useState(30);
   const [iterations, setIterations] = useState(200);
 
+  const [tradability, setTradability] = useState<Tradability | null>(null);
   const [job, setJob] = useState<ScreenJob | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [sort, setSort] = useState<{ key: SortKey; asc: boolean }>({
@@ -79,6 +91,9 @@ export function ScreenPage({ jobId }: { jobId: string | null }) {
         setPickedSymbols((symbolList.cached_symbols ?? []).slice(0, 10));
       })
       .catch(setLoadError);
+    // stage zero does not need a campaign to be useful: it answers "what is
+    // worth trading here at all" on its own, so it loads with the page
+    api.tradability().then(setTradability).catch(() => setTradability(null));
   }, []);
 
   useEffect(() => {
@@ -121,6 +136,9 @@ export function ScreenPage({ jobId }: { jobId: string | null }) {
         commission_per_lot_per_side: 0,
         swap_mode: "points",
         session_threshold: 0.5,
+    // above M1 a per-bar spread is rebuilt from the M1 sample; the
+    // median is the point of that distribution a fill is charged at
+    per_bar_spread_quantile: 0.5,
       };
       const started = await api.screen({
         strategy_ids: pickedStrategies,
@@ -177,12 +195,11 @@ export function ScreenPage({ jobId }: { jobId: string | null }) {
         <div className="stack">
           <div className="form-grid">
             <Field label="Initial equity" htmlFor="s-equity" hint="per cell, account currency">
-              <input
+              <NumberField
                 id="s-equity"
-                type="number"
                 min={1}
                 value={equity}
-                onChange={(event) => setEquity(Number(event.target.value))}
+                onChange={(value) => setEquity(value ?? 0)}
               />
             </Field>
             <Field
@@ -190,12 +207,11 @@ export function ScreenPage({ jobId }: { jobId: string | null }) {
               htmlFor="s-min"
               hint="below this a backtest has no power, whatever its curve"
             >
-              <input
+              <NumberField
                 id="s-min"
-                type="number"
                 min={1}
                 value={minTrades}
-                onChange={(event) => setMinTrades(Number(event.target.value))}
+                onChange={(value) => setMinTrades(value ?? 1)}
               />
             </Field>
             <Field
@@ -203,13 +219,12 @@ export function ScreenPage({ jobId }: { jobId: string | null }) {
               htmlFor="s-iter"
               hint="reduced on purpose: a campaign is not a confirmation"
             >
-              <input
+              <NumberField
                 id="s-iter"
-                type="number"
                 min={10}
                 max={5000}
                 value={iterations}
-                onChange={(event) => setIterations(Number(event.target.value))}
+                onChange={(value) => setIterations(value ?? 10)}
               />
             </Field>
             {/* laid out in a row, not in a scroller: a selected timeframe
@@ -301,6 +316,8 @@ export function ScreenPage({ jobId }: { jobId: string | null }) {
           </div>
         </div>
       </Panel>
+
+      <TradabilityPanel table={tradability} />
 
       {error !== null && <ErrorNotice error={error} />}
       {job?.status === "error" && (
@@ -440,12 +457,46 @@ function CellRow({ cell, required }: { cell: ScreenCell; required: number | null
           "—"
         )}
       </td>
+      <td className="num">
+        {cell.gate_rejected_share === null || cell.gate_rejected_share === undefined ? (
+          "—"
+        ) : (
+          <span
+            className={cell.gates_materially_altered ? "neg" : undefined}
+            title={cell.relaxed_verdict ?? undefined}
+          >
+            {pct(cell.gate_rejected_share, 0)}
+            {cell.gates_materially_altered ? " !" : ""}
+          </span>
+        )}
+      </td>
+      <td className="num">
+        {cell.spread_measured_share === null || cell.spread_measured_share === undefined ? (
+          "—"
+        ) : (
+          <span
+            className={cell.spread_measured_share <= 0 ? "neg" : undefined}
+            title={
+              cell.spread_measured_share <= 0
+                ? "every bar was charged a spread measured on a different period"
+                : `${cell.spread_assumed_bars ?? 0} bars on an assumed spread`
+            }
+          >
+            {pct(cell.spread_measured_share, 0)}
+            {cell.spread_measured_share <= 0 ? " !" : ""}
+          </span>
+        )}
+      </td>
       <td className="num">{num(cell.permutation_p_value, 4)}</td>
       <td>
         {cell.status === "error" ? (
           <Badge kind="bad">error</Badge>
+        ) : cell.counts_as_attempt === false ? (
+          <Badge kind="mute">refused before testing</Badge>
         ) : cell.stage_reached === "gate" ? (
           <Badge kind="mute">stopped at gate zero</Badge>
+        ) : cell.gates_materially_altered ? (
+          <Badge kind="warn">altered by its gates</Badge>
         ) : promising && !clears ? (
           <Badge kind="warn">not significant</Badge>
         ) : clears ? (
@@ -533,5 +584,172 @@ function TrialPanel({ report }: { report: ScreenReport }) {
         </details>
       </div>
     </Panel>
+  );
+}
+
+/**
+ * Stage zero, and the first thing on this page.
+ *
+ * The question it answers comes before any strategy: on which of this
+ * broker's instruments, at which timeframes, is algorithmic trading possible
+ * at all? Where the spread is a large enough share of the typical stop, the
+ * answer is no, and running a campaign there produces numbers about a bet
+ * that cannot be won.
+ *
+ * The spread is measured on M1 and never on the bars being judged: above M1
+ * the `spread` column of a bar is the minimum spread inside it, which on this
+ * broker is zero on most FX hours and would make every cell look free.
+ */
+function TradabilityPanel({ table }: { table: Tradability | null }) {
+  const [expanded, setExpanded] = useState(false);
+  if (!table) {
+    return (
+      <Panel title="Tradability">
+        <Loading label="Measuring spread against volatility on every cached pair." height={90} />
+      </Panel>
+    );
+  }
+
+  const cells = table.cells ?? [];
+  const refused = cells.filter((cell) => !cell.tradable);
+  const unjudged = cells.filter((cell) => !cell.judged);
+  const shown = expanded ? cells : [...refused, ...unjudged];
+
+  return (
+    <Panel
+      title="Tradability — what is worth testing at all"
+      aside={
+        refused.length > 0 ? (
+          <Badge kind="warn">
+            {int(refused.length)} of {int(cells.length)} cells refused
+          </Badge>
+        ) : (
+          <Badge kind="ok">every cell is testable</Badge>
+        )
+      }
+    >
+      <div className="stack">
+        <Notice kind="info" title="How a cell is refused">
+          A pair is not testable when its median spread exceeds{" "}
+          <strong>{pct(table.max_ratio, 0)}</strong> of one ATR({table.atr_period}) — that is{" "}
+          {pct(table.max_ratio / table.stop_atr_mult, 1)} of the {num(table.stop_atr_mult, 0)}×ATR
+          stop every strategy in this library places. The spread is measured on M1, where the
+          field is a spread; on a coarser bar it is the <em>minimum</em> spread inside the bar,
+          which is not a cost anyone pays. Refused cells are not counted as attempts in the
+          correction below: nothing was tested on them.
+        </Notice>
+
+        <div className="kpis">
+          <div className="kpi">
+            <div className="label">Testable</div>
+            <div className="value">{int(table.tradable)}</div>
+            <div className="sub">of {int(cells.length)} instrument × timeframe pairs</div>
+          </div>
+          <div className="kpi">
+            <div className="label">Refused</div>
+            <div className="value">{int(table.excluded)}</div>
+            <div className="sub">spread above the threshold: not an experiment</div>
+          </div>
+          <div className="kpi">
+            <div className="label">Unjudged</div>
+            <div className="value">{int(table.unjudged)}</div>
+            <div className="sub">no measurement, so no verdict either way</div>
+          </div>
+        </div>
+
+        {shown.length === 0 ? (
+          <Empty title="Every measured cell is testable">
+            <p>
+              No pair hands the broker more than {pct(table.max_ratio, 0)} of one ATR. Open the
+              full table to see how much each one does hand over.
+            </p>
+          </Empty>
+        ) : (
+          <div className="table-scroll">
+            <table>
+              <caption>
+                {expanded
+                  ? "Every cached instrument at every timeframe."
+                  : "Only the cells that were refused or could not be judged. Open the full table for the rest."}
+              </caption>
+              <thead>
+                <tr>
+                  <th scope="col">Instrument</th>
+                  <th scope="col">TF</th>
+                  <th scope="col" className="num">Spread (pt)</th>
+                  <th scope="col" className="num">ATR (pt)</th>
+                  <th scope="col" className="num">Spread / ATR</th>
+                  <th scope="col" className="num">Share of stop</th>
+                  <th scope="col">Verdict</th>
+                  <th scope="col">Note</th>
+                </tr>
+              </thead>
+              <tbody>
+                {shown.map((cell) => (
+                  <TradabilityRow key={`${cell.symbol}-${cell.timeframe}`} cell={cell} />
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        <div>
+          <button onClick={() => setExpanded((value) => !value)}>
+            {expanded ? "Show only the refused cells" : `Show all ${int(cells.length)} cells`}
+          </button>
+        </div>
+
+        {(table.warnings ?? []).map((warning) => (
+          <Notice key={warning} kind="warn" title="Careful">
+            {warning}
+          </Notice>
+        ))}
+      </div>
+    </Panel>
+  );
+}
+
+/** The part of the reason the numeric columns do not already say. */
+function note(cell: TradabilityCell): string {
+  if (!cell.judged) return cell.reason;
+  const extrapolated = cell.reason.includes("an assumption, not a measurement");
+  if (!cell.tradable) {
+    return extrapolated
+      ? "above the threshold · spread measured after this series begins"
+      : "above the threshold";
+  }
+  return extrapolated ? "spread measured after this series begins" : "";
+}
+
+function TradabilityRow({ cell }: { cell: TradabilityCell }) {
+  return (
+    <tr className={!cell.tradable ? "flagged" : undefined}>
+      <th scope="row" className="mono" style={{ fontWeight: 400 }}>
+        {cell.symbol}
+      </th>
+      <td className="mono">{cell.timeframe}</td>
+      <td className="num">{num(cell.median_spread_points, 1)}</td>
+      <td className="num">{num(cell.median_atr_points, 1)}</td>
+      <td className="num">
+        <span className={!cell.tradable ? "neg" : undefined}>
+          {pct(cell.spread_atr_ratio, 1)}
+        </span>
+      </td>
+      <td className="num">{pct(cell.spread_stop_share, 1)}</td>
+      <td>
+        {!cell.judged ? (
+          <Badge kind="mute">not judged</Badge>
+        ) : cell.tradable ? (
+          <Badge kind="ok">testable</Badge>
+        ) : (
+          <Badge kind="bad">refused</Badge>
+        )}
+      </td>
+      {/* the ratio columns already carry the numbers: this says only what
+          they cannot, and the full sentence stays available on hover */}
+      <td title={cell.reason} style={{ color: "var(--ink-faint)", fontSize: 12 }}>
+        {note(cell)}
+      </td>
+    </tr>
   );
 }

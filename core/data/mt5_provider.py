@@ -7,13 +7,16 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Iterator
 from datetime import datetime, timedelta, timezone, tzinfo
+from pathlib import Path
 from types import TracebackType
-from typing import Any, Iterator
+from typing import Any
 
 import numpy as np
 import pandas as pd
 
+from core.data.depth import MAX_PROBE_BARS, DepthProbe
 from core.data.provider import (
     BAR_COLUMNS,
     TICK_COLUMNS,
@@ -25,7 +28,10 @@ from core.data.provider import (
     normalize_bars,
 )
 from core.data.servertime import (
-    measure_offset,
+    offset_is_measurable,
+    offset_residual,
+    quantize_offset,
+    raw_offset,
     resolve_timezone,
     server_epoch_ms_to_utc_index,
     server_epoch_to_utc_index,
@@ -35,7 +41,7 @@ from core.data.servertime import (
 try:  # the package is Windows-only: the import must not break tests elsewhere
     import MetaTrader5 as mt5
 except ImportError:  # pragma: no cover
-    mt5 = None  # type: ignore[assignment]
+    mt5 = None
 
 logger = logging.getLogger(__name__)
 
@@ -86,6 +92,8 @@ class MT5Provider(DataProvider):
         max_bars_per_request: long historical requests are split to stay
             below the terminal's bar limit.
     """
+
+    source_name = "mt5_feed"
 
     def __init__(
         self,
@@ -164,7 +172,7 @@ class MT5Provider(DataProvider):
             self._selected.clear()
             logger.info("MT5 connection closed")
 
-    def __enter__(self) -> "MT5Provider":
+    def __enter__(self) -> MT5Provider:
         self.connect()
         return self
 
@@ -179,6 +187,15 @@ class MT5Provider(DataProvider):
     def _require_connection(self) -> None:
         if not self._connected:
             self.connect()
+
+    @property
+    def data_path(self) -> Path | None:
+        """Terminal data directory, where the .hc cache lives."""
+        self._require_connection()
+        assert mt5 is not None
+        info = mt5.terminal_info()
+        raw = getattr(info, "data_path", None) if info else None
+        return Path(raw) if raw else None
 
     # -- server timezone -------------------------------------------------
 
@@ -212,12 +229,25 @@ class MT5Provider(DataProvider):
             reference = datetime.now(timezone.utc)
             # tick.time encodes the server clock, not a real UTC epoch
             server_wall = datetime(1970, 1, 1) + timedelta(seconds=int(tick.time))
-            offset = measure_offset(server_wall, reference)
+            raw = raw_offset(server_wall, reference)
+            offset = quantize_offset(raw)
             if abs(offset) > MAX_PLAUSIBLE_SERVER_OFFSET:
                 logger.debug(
                     "tick of %s too old to measure the timezone (offset %s)",
                     symbol,
                     offset,
+                )
+                continue
+            if not offset_is_measurable(raw):
+                # the quote is from an earlier session: what is being measured
+                # is its age, and rounding that to the nearest half hour lands
+                # on a real timezone an hour from the right one
+                logger.debug(
+                    "tick of %s is %s stale: %s is not close enough to a half "
+                    "hour to name a timezone",
+                    symbol,
+                    offset_residual(raw),
+                    raw,
                 )
                 continue
             zone = resolve_timezone(offset, at=reference)
@@ -372,6 +402,45 @@ class MT5Provider(DataProvider):
             merged.index.max() if len(merged) else None,
         )
         return merged
+
+    def probe_depth(
+        self, symbol: str, timeframe: Timeframe | str, max_bars: int = MAX_PROBE_BARS
+    ) -> DepthProbe:
+        """First bar the terminal will serve for this pair, and how many.
+
+        Uses `copy_rates_from_pos` from the most recent bar backwards: it is
+        the only call that says "give me everything you have" without being
+        told a start date, which is precisely what is unknown here. The
+        terminal rejects counts above a few hundred thousand outright rather
+        than clamping them, so `max_bars` is a real ceiling and a full result
+        is reported as truncated instead of as the depth.
+        """
+        self._require_connection()
+        assert mt5 is not None
+        tf = Timeframe.parse(timeframe)
+        probed_at = datetime.now(timezone.utc)
+        self._select(symbol)
+        self._warmup(symbol, tf)
+
+        rates = mt5.copy_rates_from_pos(symbol, self._mt5_timeframe(tf), 0, max_bars)
+        if rates is None or len(rates) == 0:
+            return DepthProbe(
+                symbol=symbol, timeframe=tf.name, source=self.source_name, bars=0,
+                first_bar=None, last_bar=None, truncated=False, probed_at=probed_at,
+                error=_last_error() if rates is None else "no bars returned",
+            )
+
+        index = server_epoch_to_utc_index(rates["time"], self.server_timezone)
+        return DepthProbe(
+            symbol=symbol,
+            timeframe=tf.name,
+            source=self.source_name,
+            bars=int(len(rates)),
+            first_bar=index[0].to_pydatetime(),
+            last_bar=index[-1].to_pydatetime(),
+            truncated=bool(len(rates) >= max_bars),
+            probed_at=probed_at,
+        )
 
     def get_ticks(self, symbol: str, start: datetime, end: datetime) -> pd.DataFrame:
         self._require_connection()

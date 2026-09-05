@@ -25,14 +25,15 @@ from __future__ import annotations
 import copy
 import itertools
 import logging
+from collections.abc import Sequence
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta, tzinfo
-from typing import Any, Literal, Sequence
+from typing import Any, Literal
 
 import numpy as np
 import pandas as pd
 
-from core.data.provider import SymbolSpec, Timeframe
+from core.data.provider import SymbolSpec
 from core.engine.backtester import BacktestConfig, run_backtest
 from core.metrics.performance import PerformanceReport, compute_metrics
 from core.serialization import json_safe
@@ -291,6 +292,7 @@ def _run_slice(
         result.timeframe,
         backtest_config.initial_equity,
         label,
+        server_tz=server_tz,
     )
     return report, result.trades, result.equity
 
@@ -444,6 +446,7 @@ def walk_forward(
             spec.instrument.tf,
             backtest_config.initial_equity,
             "walk-forward OOS",
+            server_tz=server_tz,
         )
         oos_metrics = _metrics_subset(report)
 
@@ -522,12 +525,12 @@ def _degradation(windows: Sequence[WindowResult]) -> list[dict[str, Any]]:
     ]
     for key in DEGRADATION_KEYS:
         train_values = [
-            float(window.train_metrics[key])  # type: ignore[index]
+            float(window.train_metrics[key])
             for window in usable
             if _finite(window.train_metrics, key)
         ]
         test_values = [
-            float(window.test_metrics[key])  # type: ignore[index]
+            float(window.test_metrics[key])
             for window in usable
             if _finite(window.test_metrics, key)
         ]

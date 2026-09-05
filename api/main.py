@@ -10,24 +10,27 @@ belongs.
 """
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
+import re
 import tempfile
 import time
+from collections.abc import Iterator
 from concurrent.futures import Future, ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeout
 from contextlib import asynccontextmanager
 from dataclasses import asdict
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone, tzinfo
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any
 
 import numpy as np
 import pandas as pd
 from fastapi import FastAPI, HTTPException, Query
-from scipy import stats
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from scipy import stats
 from starlette.requests import Request
 
 from api import schemas as s
@@ -35,10 +38,18 @@ from api.downsample import downsample
 from core.batch.runner import Period as BatchPeriod
 from core.batch.runner import run_batch
 from core.data.cache import ParquetCache
+from core.data.fixture_provider import resolve_cache_dir
 from core.data.provider import Timeframe
 from core.data.quality import check_quality
+from core.data.spread import SpreadUnavailable
 from core.engine.backtester import BacktestConfig, run_backtest
+from core.engine.costs import AggregatedSpreadRefused
+from core.live.compare import compare as live_compare
+from core.live.journal import Journal
+from core.live.lock import RunLock, process_alive
 from core.research.screen import run_screen
+from core.research.tradability import DEFAULT_MAX_SPREAD_ATR
+from core.research.tradability import build_table as build_tradability
 from core.runs.runner import (
     DataUnavailable,
     EnvironmentUnavailable,
@@ -46,6 +57,7 @@ from core.runs.runner import (
     cached_years,
     execute_run,
     load_bars,
+    load_bars_for_run,
     plan_run,
     run_edge_gate,
 )
@@ -82,9 +94,18 @@ HARD_TIMEOUT_SECONDS = 600.0
 MAX_BARS = 3_000_000
 MAX_EQUITY_POINTS = 2000
 
-CACHE_DIR = Path(os.environ.get("BACKTEST_CACHE_DIR", "data_cache"))
+# Which bars the backend serves. A machine with a terminal and a downloaded
+# `data_cache/` gets that; a fresh clone gets the synthetic fixture, so the
+# application starts with something in it instead of an empty instrument
+# list. `IS_FIXTURE` is carried into /api/health and shown by the UI: a
+# dashboard that presents invented data without saying so is the one failure
+# mode this project cannot have.
+CACHE_DIR, IS_FIXTURE = resolve_cache_dir(os.environ.get("BACKTEST_CACHE_DIR"))
 RUNS_DIR = Path(os.environ.get("BACKTEST_RUNS_DIR", "runs"))
 STRATEGIES_DIR = Path(os.environ.get("BACKTEST_STRATEGIES_DIR", "strategies"))
+# The backend never starts a runner: scripts.run_live does, in its own
+# process. This is only where its diaries are read from.
+LIVE_DIR = Path(os.environ.get("BACKTEST_LIVE_DIR", "logs/live"))
 
 cache = ParquetCache(CACHE_DIR)
 store = RunStore(RUNS_DIR)
@@ -98,6 +119,12 @@ async def lifespan(app: FastAPI):
     global _executor
     _executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="backtest")
     logger.info("cache=%s runs=%s strategies=%s", CACHE_DIR, RUNS_DIR, STRATEGIES_DIR)
+    if IS_FIXTURE:
+        logger.warning(
+            "serving the SYNTHETIC FIXTURE from %s: the bars are invented and "
+            "every number measured on them describes a random number "
+            "generator, not a market", CACHE_DIR,
+        )
     yield
     _executor.shutdown(wait=False, cancel_futures=True)
 
@@ -130,6 +157,16 @@ def _run_not_found(request: Request, exc: RunNotFound) -> JSONResponse:
 
 @app.exception_handler(SpecError)
 def _spec_error(request: Request, exc: SpecError) -> JSONResponse:
+    return JSONResponse(status_code=422, content={"detail": str(exc)})
+
+
+@app.exception_handler(SpreadUnavailable)
+def _spread_unavailable(request: Request, exc: SpreadUnavailable) -> JSONResponse:
+    return JSONResponse(status_code=409, content={"detail": str(exc)})
+
+
+@app.exception_handler(AggregatedSpreadRefused)
+def _aggregated_spread(request: Request, exc: AggregatedSpreadRefused) -> JSONResponse:
     return JSONResponse(status_code=422, content={"detail": str(exc)})
 
 
@@ -174,13 +211,21 @@ def _cached_symbols() -> list[str]:
 def get_symbols() -> s.SymbolListOut:
     """Broker instruments with their contract specification."""
     known = _cached_symbols()
-    try:
-        specs = resolver.refresh()
-        source = "terminal"
-    except Exception as exc:
-        logger.warning("terminal unavailable, using the cached specs: %s", exc)
+    if IS_FIXTURE:
+        # `refresh` writes a spec file per broker symbol into the cache root.
+        # Against the fixture that would drop a few hundred real instruments
+        # into a directory that is committed, so the terminal is not asked at
+        # all: the fixture is a fixed artefact, not a cache to be filled.
         specs = []
-        source = "cache"
+        source = "fixture"
+    else:
+        try:
+            specs = resolver.refresh()
+            source = "terminal"
+        except Exception as exc:
+            logger.warning("terminal unavailable, using the cached specs: %s", exc)
+            specs = []
+            source = "cache"
 
     # symbols with cached data stay selectable even if the broker no longer
     # lists them: runs already made on them must stay reproducible
@@ -231,7 +276,15 @@ def get_coverage(
     bars = load_bars(cache, symbol, tf)
     report = None
     if quality:
-        computed = check_quality(bars, symbol, tf)
+        # the session grid has to be built on the broker clock: in UTC a DST
+        # change moves every slot by an hour and a whole summer reads as a
+        # gap. Without the terminal it falls back to UTC, and the report
+        # carries which clock it used.
+        try:
+            session_tz: tzinfo | None = resolver.server_timezone()
+        except EnvironmentUnavailable:
+            session_tz = None
+        computed = check_quality(bars, symbol, tf, server_tz=session_tz)
         worst = sorted(computed.gaps, key=lambda g: g.missing_bars, reverse=True)[:5]
         report = s.QualityOut(
             rows=computed.rows,
@@ -244,12 +297,16 @@ def get_coverage(
             duplicate_timestamps=computed.duplicate_timestamps,
             zero_spread=computed.zero_spread,
             session_confidence=computed.session_confidence,
+            session_clock=computed.session_clock,
             text=computed.as_text(),
             worst_gaps=[
                 s.GapOut(start=g.start, end=g.end, missing_bars=g.missing_bars) for g in worst
             ],
         )
 
+    from core.data.spread import measure_from_cache
+
+    reference = measure_from_cache(cache, symbol)
     return s.CoverageOut(
         symbol=symbol,
         timeframe=tf.name,
@@ -258,6 +315,9 @@ def get_coverage(
         end=bars.index[-1].to_pydatetime(),
         bars=len(bars),
         quality=report,
+        spread_median_points=(
+            float(reference.median_points) if reference is not None else None
+        ),
     )
 
 
@@ -328,6 +388,193 @@ def validate_strategy(request: s.ValidateRequest) -> s.ValidateResponse:
     )
 
 
+# -- the vocabulary the editor builds from --------------------------------
+
+
+def _params_out(model: Any) -> list[s.ParamOut]:
+    """A pydantic params model as the flat parameter list the editor needs."""
+    schema = model.model_json_schema()
+    out: list[s.ParamOut] = []
+    for name, field in schema.get("properties", {}).items():
+        choices = field.get("enum")
+        out.append(
+            s.ParamOut(
+                name=name,
+                type="enum" if choices else str(field.get("type", "string")),
+                default=field.get("default"),
+                minimum=field.get("minimum"),
+                maximum=field.get("maximum"),
+                exclusive_minimum=field.get("exclusiveMinimum"),
+                choices=[str(c) for c in choices] if choices else None,
+            )
+        )
+    return out
+
+
+@app.get("/api/vocabulary", response_model=s.VocabularyOut, tags=["strategies"])
+def get_vocabulary() -> s.VocabularyOut:
+    """What a spec may contain, straight from the registry and the models.
+
+    The editor renders whatever is here and nothing else. Duplicating this
+    list in the frontend is how a spec becomes valid on screen and invalid on
+    the server.
+    """
+    from typing import get_args
+
+    from core.indicators import registry
+    from core.strategy.features import FEATURE_NAMES
+    from core.strategy.spec import SCHEMA_VERSION, BarField, Compare, Sizing, Trend
+
+    indicators = [
+        s.IndicatorOut(
+            name=name,
+            params=_params_out(registry.get(name).params_model),
+            outputs=list(registry.get(name).outputs),
+            bar_inputs=list(registry.get(name).bar_inputs),
+        )
+        for name in registry.available()
+    ]
+    return s.VocabularyOut(
+        schema_version=SCHEMA_VERSION,
+        indicators=indicators,
+        features=list(FEATURE_NAMES),
+        bar_fields=list(get_args(BarField)),
+        price_sources=list(get_args(registry.PriceSource)),
+        comparison_operators=list(
+            get_args(Compare.model_fields["op"].annotation)
+        ),
+        group_operators=["and", "or", "not"],
+        trend_operators=list(get_args(Trend.model_fields["op"].annotation)),
+        exit_level_types=["points", "percent", "atr"],
+        sizing_types=list(get_args(Sizing.model_fields["type"].annotation)),
+        timeframes=[tf.name for tf in Timeframe],
+        spread_modes=["per_bar", "fixed", "quantile"],
+        swap_modes=["points", "money", "none"],
+    )
+
+
+STRATEGY_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+
+
+def _unusable_as_filename(strategy_id: str) -> bool:
+    """A spec id becomes a file name, so it has to be one.
+
+    Not cosmetic: `..` and a separator in an id would let a save request
+    write outside `strategies/`, and this endpoint takes its input from a
+    browser.
+    """
+    return not STRATEGY_ID_PATTERN.match(strategy_id) or ".." in strategy_id
+
+
+@app.post("/api/strategies", response_model=s.SaveStrategyResponse, tags=["strategies"])
+def save_strategy(request: s.SaveStrategyRequest) -> s.SaveStrategyResponse:
+    """Validates a spec and writes it to `strategies/`.
+
+    Refuses to replace an existing file unless asked to: the most likely way
+    to reach this endpoint is "duplicate one of the library strategies and
+    change it", and silently overwriting the original would be the worst
+    possible outcome of that flow.
+    """
+    spec = StrategySpec.from_dict(request.spec, "<request>")
+    if _unusable_as_filename(spec.id):
+        raise HTTPException(
+            status_code=400,
+            detail=f"strategy id {spec.id!r} is not usable as a file name: use "
+            f"letters, digits, dashes and underscores",
+        )
+
+    STRATEGIES_DIR.mkdir(parents=True, exist_ok=True)
+    target = STRATEGIES_DIR / f"{spec.id}.json"
+    existing = target.exists()
+    if existing and not request.overwrite:
+        raise HTTPException(
+            status_code=409,
+            detail=f"{target.name} already exists. Change the strategy id, or "
+            f"send overwrite=true to replace it",
+        )
+    spec.save(target)
+    logger.info("strategy %s written to %s", spec.id, target)
+    return s.SaveStrategyResponse(
+        id=spec.id,
+        file=target.name,
+        created=not existing,
+        message=(
+            f"replaced {target.name}" if existing else f"saved as {target.name}"
+        ),
+    )
+
+
+@app.post("/api/strategies/preview", response_model=s.PreviewResponse, tags=["strategies"])
+def post_preview(request: s.PreviewRequest) -> s.PreviewResponse:
+    """What this spec is about to cost, before any backtest is run."""
+    from core.research.preview import preview as build_preview
+
+    spec, run_config, bars, symbol_spec = _prepare(request, request.config)
+    family = [
+        store.load_run(summary.run_id)
+        for summary in store.list_runs(symbol=run_config.symbol, status="done")
+    ]
+    # the same instrument over a period that does not overlap this one is a
+    # different question and does not belong in the count
+    records = [
+        record
+        for record in family
+        if _periods_overlap(record.meta.data_start, record.meta.data_end,
+                            run_config.start, run_config.end)
+    ]
+    report = build_preview(
+        spec,
+        bars,
+        symbol_spec.spec,
+        cache,
+        commission=run_config.cost_model().commission,
+        records=records,
+        period_start=run_config.start,
+        period_end=run_config.end,
+        overall_trials=_whole_search(),
+    )
+    return s.PreviewResponse(**report.as_dict())
+
+
+# The whole-search correction, cached. Building it loads every finished run
+# from disk, and the editor asks for a preview on every edit; runs are
+# immutable and only ever appended, so the cache is invalidated by the set of
+# run ids changing rather than by a timer.
+_TRIALS_CACHE: dict[str, Any] = {"key": None, "value": None}
+
+
+def _whole_search() -> Any:
+    """Every attempt this engine has registered, on any instrument."""
+    from core.research.preview import trial_set
+
+    ids = tuple(
+        sorted(summary.run_id for summary in store.list_runs(status="done"))
+    )
+    key = hashlib.sha256("".join(ids).encode("utf-8")).hexdigest()
+    if _TRIALS_CACHE["key"] != key:
+        _TRIALS_CACHE["value"] = trial_set(
+            [store.load_run(run_id) for run_id in ids]
+        )
+        _TRIALS_CACHE["key"] = key
+    return _TRIALS_CACHE["value"]
+
+
+def _periods_overlap(
+    left_start: datetime | None,
+    left_end: datetime | None,
+    right_start: datetime | None,
+    right_end: datetime | None,
+) -> bool:
+    """Whether two half-open periods share any time at all. None is unbounded."""
+    # two guard clauses rather than one negated boolean: each line is one
+    # way the periods can fail to overlap, and reads as such
+    if left_end is not None and right_start is not None and left_end <= right_start:
+        return False
+    if right_end is not None and left_start is not None and right_end <= left_start:  # noqa: SIM103
+        return False
+    return True
+
+
 # -- preparing a run -----------------------------------------------------
 
 
@@ -360,6 +607,13 @@ def _run_config(config: s.RunConfigIn) -> RunConfig:
             status_code=400,
             detail="spread_mode 'quantile' requires spread_value between 0 and 1",
         )
+    if not 0.5 <= config.per_bar_spread_quantile <= 1.0:
+        raise HTTPException(
+            status_code=400,
+            detail="per_bar_spread_quantile must be between 0.5 and 1.0: below "
+            "the median the reconstruction drifts back towards the minimum it "
+            "exists to replace",
+        )
     return RunConfig(
         symbol=config.symbol,
         timeframe=_timeframe(config.timeframe).name,
@@ -371,15 +625,14 @@ def _run_config(config: s.RunConfigIn) -> RunConfig:
         commission_per_lot_per_side=config.commission_per_lot_per_side,
         swap_mode=config.swap_mode,
         session_threshold=config.session_threshold,
+        per_bar_spread_quantile=config.per_bar_spread_quantile,
     )
 
 
 def _prepare(request: s.StrategyRef, config: s.RunConfigIn):
     spec = _resolve_spec(request)
     run_config = _run_config(config)
-    bars = load_bars(
-        cache, run_config.symbol, run_config.tf, run_config.start, run_config.end
-    )
+    bars = load_bars_for_run(cache, run_config)
     if len(bars) > MAX_BARS:
         raise HTTPException(
             status_code=413,
@@ -538,6 +791,13 @@ def get_run(run_id: str) -> s.RunDetailOut:
         ),
         symbol_spec_read_at=record.symbol_spec.read_at if record.symbol_spec else None,
         symbol_spec_registered=record.symbol_spec_registered,
+        costs=s.SpreadRealismOut(**metrics["costs"]) if metrics.get("costs") else None,
+        spread_coverage=(
+            s.SpreadCoverageOut(**metrics["spread_coverage"])
+            if metrics.get("spread_coverage")
+            else None
+        ),
+        aggregated_spread_cost=bool(record.meta.aggregated_spread_cost),
     )
 
 
@@ -1297,12 +1557,234 @@ def get_screen(job_id: str) -> s.ScreenJobOut:
     return s.ScreenJobOut(**job)
 
 
+# -- tradability ---------------------------------------------------------
+
+
+@app.get("/api/tradability", response_model=s.TradabilityOut, tags=["research"])
+def get_tradability(
+    symbols: str = Query(
+        default="", description="comma-separated; default is everything cached"
+    ),
+    timeframes: str = Query(default="M5,M15,H1,H4,D1"),
+    max_spread_atr: float = Query(default=DEFAULT_MAX_SPREAD_ATR, gt=0, le=1.0),
+) -> s.TradabilityOut:
+    """Stage zero: which instrument x timeframe pairs are worth testing at all.
+
+    The spread comes from each instrument's M1 sample, never from the bars
+    being judged: above M1 that column is the minimum spread inside the bar,
+    which on this broker is zero on most FX hours.
+    """
+    wanted = [name.strip() for name in symbols.split(",") if name.strip()]
+    wanted = wanted or _cached_symbols()
+    frames = [name.strip() for name in timeframes.split(",") if name.strip()]
+    points: dict[str, float] = {}
+    for name in wanted:
+        try:
+            points[name] = resolver.symbol_spec(name).point
+        except EnvironmentUnavailable:
+            logger.warning("%s: no spec, left out of the tradability table", name)
+
+    table = build_tradability(cache, wanted, frames, points, max_ratio=max_spread_atr)
+    return s.TradabilityOut(**table.as_dict())
+
+
+# -- the live runner -----------------------------------------------------
+
+
+@app.get("/api/live", response_model=list[s.LiveSessionOut], tags=["live"])
+def list_live_sessions() -> list[s.LiveSessionOut]:
+    """Every diary under the live directory, most recent activity first.
+
+    The backend does not run the runner: `scripts.run_live` does, in its own
+    process, with its own lock. This reads what that process wrote, so the
+    dashboard can be opened and closed without touching a running strategy.
+    """
+    if not LIVE_DIR.exists():
+        return []
+    epoch = datetime.min.replace(tzinfo=timezone.utc)
+    return sorted(
+        (_live_session(path) for path in sorted(LIVE_DIR.glob("*.jsonl"))),
+        key=lambda session: session.last_event_at or epoch,
+        reverse=True,
+    )
+
+
+@app.get("/api/live/{session_id}", response_model=s.LiveDetailOut, tags=["live"])
+def get_live_session(
+    session_id: str,
+    events: int = Query(default=100, ge=1, le=1000),
+) -> s.LiveDetailOut:
+    """One runner: its state, its recent diary, and its closed trades."""
+    path = _live_path(session_id)
+    journal = Journal(path)
+    trades = journal.trades()
+
+    # A runner on H1 writes one `bar` line an hour and an order line once a
+    # week. Returning the last N lines would push every decision out of the
+    # window and leave a diary that shows only heartbeats, so the two are
+    # tailed separately and merged back in order.
+    everything = list(journal.events())
+    bars = [event for event in everything if event.kind == "bar"][-events:]
+    decisions = [event for event in everything if event.kind != "bar"][-events:]
+    window = sorted(bars + decisions, key=lambda event: event.at)
+
+    return s.LiveDetailOut(
+        session=_live_session(path),
+        events=[
+            s.LiveEventOut(
+                at=event.at,
+                kind=event.kind,
+                bar_time=event.bar_time,
+                detail=json_safe(event.detail),
+            )
+            for event in reversed(window)
+        ],
+        trades=[s.LiveTradeOut(**json_safe(row)) for row in trades.to_dict("records")],
+    )
+
+
+@app.get(
+    "/api/live/{session_id}/comparison",
+    response_model=s.LiveComparisonOut,
+    tags=["live"],
+)
+def get_live_comparison(session_id: str) -> s.LiveComparisonOut:
+    """Expected versus realized: a backtest of exactly the diary's own period.
+
+    The backtest is computed here rather than looked up, over the bars the
+    runner actually saw, so the two records describe the same period by
+    construction. Comparing against a backtest of a different window would
+    measure the window.
+    """
+    path = _live_path(session_id)
+    journal = Journal(path)
+    session = _live_session(path)
+    if not session.strategy_id or session.first_bar is None:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"the diary {session_id} holds no start event naming a strategy, "
+                f"or no processed bar: there is nothing to reproduce a backtest "
+                f"from"
+            ),
+        )
+
+    spec = apply_params(
+        _strategy_by_id(session.strategy_id),
+        {
+            "instrument.symbol": session.symbol,
+            "instrument.timeframe": session.timeframe,
+        },
+    )
+    tf = _timeframe(session.timeframe)
+    end = (session.last_bar or session.first_bar) + timedelta(minutes=tf.minutes)
+    bars = load_bars(cache, session.symbol, tf, session.first_bar, end)
+    symbol_spec = resolver.symbol_spec(session.symbol)
+
+    expected = run_backtest(
+        spec,
+        bars,
+        symbol_spec,
+        resolver.server_timezone(),
+        BacktestConfig(initial_equity=session.initial_equity or 100.0),
+    )
+    report = live_compare(expected.trades, journal, symbol_spec, session.timeframe)
+    return s.LiveComparisonOut(**report.as_dict())
+
+
+def _live_path(session_id: str) -> Path:
+    if "/" in session_id or "\\" in session_id or ".." in session_id:
+        raise HTTPException(status_code=400, detail=f"invalid session id: {session_id}")
+    path = LIVE_DIR / f"{session_id}.jsonl"
+    if not path.exists():
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"no live diary {session_id}. Diaries are written by "
+                f"scripts.run_live into {LIVE_DIR}"
+            ),
+        )
+    return path
+
+
+def _strategy_by_id(strategy_id: str) -> StrategySpec:
+    for path in sorted(STRATEGIES_DIR.glob("*.json")):
+        try:
+            spec = StrategySpec.from_json(path)
+        except SpecError:
+            continue
+        if spec.id == strategy_id:
+            return spec
+    raise HTTPException(
+        status_code=404,
+        detail=(
+            f"the diary names strategy {strategy_id}, which is not in "
+            f"{STRATEGIES_DIR}: the spec it ran with is no longer available"
+        ),
+    )
+
+
+def _live_session(path: Path) -> s.LiveSessionOut:
+    """The header facts of one diary, read in a single pass."""
+    journal = Journal(path)
+    started: dict[str, Any] = {}
+    symbol = timeframe = ""
+    first_bar = last_bar = last_event = None
+    bars = trades = errors = 0
+    stopped = False
+
+    for event in journal.events():
+        symbol = event.symbol or symbol
+        timeframe = event.timeframe or timeframe
+        last_event = event.at
+        if event.kind == "started":
+            started = event.detail
+        elif event.kind == "bar":
+            bars += 1
+            if first_bar is None:
+                first_bar = event.bar_time
+            last_bar = event.bar_time
+        elif event.kind == "position_closed":
+            trades += 1
+        elif event.kind == "error":
+            errors += 1
+        elif event.kind == "stopped":
+            stopped = True
+
+    lock = LIVE_DIR / f"{path.stem}.lock"
+    info = RunLock(lock).read()
+    return s.LiveSessionOut(
+        has_lock=lock.exists(),
+        session_id=path.stem,
+        symbol=symbol,
+        timeframe=timeframe,
+        strategy_id=started.get("strategy_id"),
+        engine_version=started.get("engine_version"),
+        dry_run=bool(started.get("dry_run", True)),
+        account_guard=started.get("account_guard"),
+        initial_equity=started.get("initial_equity"),
+        bars_processed=bars,
+        trades=trades,
+        errors=errors,
+        first_bar=first_bar,
+        last_bar=last_bar,
+        last_event_at=last_event,
+        stopped=stopped,
+        running=bool(info and process_alive(info.pid)),
+        pid=info.pid if info else None,
+    )
+
+
 @app.get("/api/health", tags=["data"])
 def health() -> dict[str, Any]:
     return {
         "status": "ok",
+        "engine_version": ENGINE_VERSION,
+        # the UI banners on this: invented data has to announce itself
+        "synthetic_fixture": IS_FIXTURE,
         "cache_dir": str(CACHE_DIR.resolve()),
         "runs_dir": str(RUNS_DIR.resolve()),
         "strategies_dir": str(STRATEGIES_DIR.resolve()),
+        "live_dir": str(LIVE_DIR.resolve()),
         "runs": len(store.list_runs(limit=500)),
     }

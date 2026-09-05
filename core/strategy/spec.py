@@ -9,8 +9,9 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Iterator
 from pathlib import Path
-from typing import Annotated, Any, Iterator, Literal, Union
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
@@ -21,7 +22,12 @@ logger = logging.getLogger(__name__)
 
 SCHEMA_VERSION = 1
 
-BarField = Literal["open", "high", "low", "close", "volume", "spread"]
+# `spread` is a real spread on M1 and, above it, a column that exists only
+# where it was rebuilt from the M1 sample; `min_spread_m1` is the broker's
+# raw field above M1, which is the minimum of those spreads and not a cost.
+BarField = Literal[
+    "open", "high", "low", "close", "volume", "spread", "min_spread_m1"
+]
 FeatureName = Literal[
     "lower_wick_ratio",
     "upper_wick_ratio",
@@ -70,7 +76,7 @@ class FeatureOperand(_Model):
 
 
 Operand = Annotated[
-    Union[RefOperand, ConstOperand, BarOperand, FeatureOperand],
+    RefOperand | ConstOperand | BarOperand | FeatureOperand,
     Field(union_mode="left_to_right"),
 ]
 
@@ -80,12 +86,12 @@ Operand = Annotated[
 
 class AndOr(_Model):
     op: Literal["and", "or"]
-    operands: list["Condition"] = Field(min_length=1)
+    operands: list[Condition] = Field(min_length=1)
 
 
 class Not(_Model):
     op: Literal["not"]
-    operand: "Condition"
+    operand: Condition
 
 
 class Compare(_Model):
@@ -108,7 +114,7 @@ class Trend(_Model):
 
 
 Condition = Annotated[
-    Union[AndOr, Not, Compare, Between, Trend],
+    AndOr | Not | Compare | Between | Trend,
     Field(discriminator="op"),
 ]
 
@@ -139,7 +145,7 @@ class Instrument(_Model):
     timeframe: str
 
     @model_validator(mode="after")
-    def _check_timeframe(self) -> "Instrument":
+    def _check_timeframe(self) -> Instrument:
         Timeframe.parse(self.timeframe)
         return self
 
@@ -154,7 +160,7 @@ class IndicatorSpec(_Model):
     params: dict[str, Any] = Field(default_factory=dict)
 
     @model_validator(mode="after")
-    def _check_type_and_params(self) -> "IndicatorSpec":
+    def _check_type_and_params(self) -> IndicatorSpec:
         try:
             definition = registry.get(self.type)
         except KeyError as exc:
@@ -175,7 +181,7 @@ class Entry(_Model):
     short: Condition | None = None
 
     @model_validator(mode="after")
-    def _at_least_one_side(self) -> "Entry":
+    def _at_least_one_side(self) -> Entry:
         if self.long is None and self.short is None:
             raise ValueError("entry: at least one of 'long' and 'short' is required")
         return self
@@ -216,7 +222,7 @@ class AtrLevel(_Model):
 
 
 Level = Annotated[
-    Union[PointsLevel, PercentLevel, AtrLevel],
+    PointsLevel | PercentLevel | AtrLevel,
     Field(discriminator="type"),
 ]
 
@@ -232,7 +238,7 @@ class Exit(_Model):
     signal_exit: Condition | None = None
 
     @model_validator(mode="after")
-    def _needs_a_way_out(self) -> "Exit":
+    def _needs_a_way_out(self) -> Exit:
         if not any((self.stop_loss, self.take_profit, self.time_stop, self.signal_exit)):
             raise ValueError(
                 "exit: without stop_loss, take_profit, time_stop or signal_exit "
@@ -248,7 +254,7 @@ class Sizing(_Model):
     max_lot: float = Field(gt=0)
 
     @model_validator(mode="after")
-    def _ordered(self) -> "Sizing":
+    def _ordered(self) -> Sizing:
         if self.max_lot < self.min_lot:
             raise ValueError(f"sizing: max_lot ({self.max_lot}) < min_lot ({self.min_lot})")
         return self
@@ -262,7 +268,7 @@ class Session(_Model):
     timezone: Literal["server", "utc"] = "server"
 
     @model_validator(mode="after")
-    def _parse_times(self) -> "Session":
+    def _parse_times(self) -> Session:
         for value in (self.start, self.end):
             hours, _, minutes = value.partition(":")
             if not (hours.isdigit() and minutes.isdigit()):
@@ -281,7 +287,7 @@ class Risk(_Model):
     news_filter: None = None
 
     @model_validator(mode="after")
-    def _news_not_implemented(self) -> "Risk":
+    def _news_not_implemented(self) -> Risk:
         if self.news_filter is not None:
             raise ValueError(
                 "risk.news_filter: not implemented in this phase, must be null"
@@ -302,7 +308,7 @@ class StrategySpec(_Model):
     risk: Risk = Field(default_factory=Risk)
 
     @model_validator(mode="after")
-    def _cross_checks(self) -> "StrategySpec":
+    def _cross_checks(self) -> StrategySpec:
         if self.schema_version != SCHEMA_VERSION:
             raise ValueError(
                 f"schema_version {self.schema_version} not supported "
@@ -383,14 +389,14 @@ class StrategySpec(_Model):
     # -- serialization ---------------------------------------------------
 
     @classmethod
-    def from_dict(cls, payload: dict[str, Any], origin: str = "<dict>") -> "StrategySpec":
+    def from_dict(cls, payload: dict[str, Any], origin: str = "<dict>") -> StrategySpec:
         try:
             return cls.model_validate(payload)
         except ValidationError as exc:
             raise SpecError(_format_errors(exc, origin)) from exc
 
     @classmethod
-    def from_json(cls, source: str | Path) -> "StrategySpec":
+    def from_json(cls, source: str | Path) -> StrategySpec:
         """Loads from a file path or a JSON string."""
         path = Path(source) if not str(source).lstrip().startswith("{") else None
         if path is not None:

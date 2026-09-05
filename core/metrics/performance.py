@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from datetime import timedelta
+from datetime import timedelta, tzinfo
 
 import numpy as np
 import pandas as pd
@@ -34,12 +34,23 @@ WEEKS_PER_YEAR = 365.25 / 7.0
 
 
 def periods_per_year(
-    index: pd.DatetimeIndex, timeframe: Timeframe, threshold: float = 0.5
+    index: pd.DatetimeIndex,
+    timeframe: Timeframe,
+    threshold: float = 0.5,
+    server_tz: tzinfo | None = None,
 ) -> float:
-    """Open-market bars in a year, derived from the data itself."""
+    """Open-market bars in a year, derived from the data itself.
+
+    `server_tz` is the clock the session slots are counted on. Left out, they
+    are counted in UTC, where a DST change moves every slot by an hour and
+    the threshold keeps one of the two regimes: on a sample spanning one, the
+    count of open slots per week is wrong, and every annualized figure that
+    divides by it - the Sharpe, the Sortino, the annual return, the Calmar -
+    is wrong with it.
+    """
     if len(index) < 2:
         return float(WEEKS_PER_YEAR * (7 * 24 * 60) / timeframe.minutes)
-    active, _ = infer_session_slots(index, timeframe, threshold)
+    active, _ = infer_session_slots(index, timeframe, threshold, server_tz)
     slots_per_week = len(active) or (7 * 24 * 60 // timeframe.minutes)
     return float(slots_per_week * WEEKS_PER_YEAR)
 
@@ -165,8 +176,13 @@ def compute_metrics(
     initial_equity: float,
     label: str = "strategy",
     exposure_bars: int | None = None,
+    server_tz: tzinfo | None = None,
 ) -> PerformanceReport:
-    """Full report from trades + equity curve."""
+    """Full report from trades + equity curve.
+
+    `server_tz` only reaches the annualization, and only through the session
+    calendar: see `periods_per_year`.
+    """
     start = equity.index[0] if len(equity) else None
     end = equity.index[-1] if len(equity) else None
     days = (end - start).total_seconds() / 86400.0 if start is not None else 0.0
@@ -179,7 +195,11 @@ def compute_metrics(
     else:
         annual_return = 0.0
 
-    ppy = periods_per_year(pd.DatetimeIndex(equity.index), timeframe) if len(equity) else 1.0
+    ppy = (
+        periods_per_year(pd.DatetimeIndex(equity.index), timeframe, server_tz=server_tz)
+        if len(equity)
+        else 1.0
+    )
     sharpe, sortino = _risk_adjusted(equity, ppy)
     dd_money, dd_pct = _drawdown(equity)
     calmar = annual_return / dd_pct if dd_pct > 0 else 0.0
@@ -274,7 +294,7 @@ def buy_and_hold(
     timeframe: Timeframe,
     initial_equity: float,
     costs: CostModel,
-    server_tz,
+    server_tz: tzinfo,
 ) -> PerformanceReport:
     """Buy on the first bar and stand still until the last.
 
@@ -284,7 +304,8 @@ def buy_and_hold(
     """
     if bars.empty:
         return compute_metrics(
-            pd.DataFrame(), pd.Series(dtype="float64"), timeframe, initial_equity, "buy & hold"
+            pd.DataFrame(), pd.Series(dtype="float64"), timeframe, initial_equity,
+            "buy & hold", server_tz=server_tz,
         )
 
     lots = lots_for(sizing, initial_equity, symbol_spec)
@@ -293,7 +314,7 @@ def buy_and_hold(
         lots = symbol_spec.volume_min
 
     value = money_per_point(symbol_spec, lots)
-    spread_points = costs.spread.series(bars)
+    spread_points = costs.spread.series(bars, timeframe)
     entry_raw = float(bars["open"].iloc[0])
     entry_spread = float(spread_points.iloc[0])
     commission = costs.commission.round_turn(lots)
@@ -337,5 +358,6 @@ def buy_and_hold(
         ]
     )
     return compute_metrics(
-        trade, equity, timeframe, initial_equity, "buy & hold", exposure_bars=len(bars)
+        trade, equity, timeframe, initial_equity, "buy & hold",
+        exposure_bars=len(bars), server_tz=server_tz,
     )

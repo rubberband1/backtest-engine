@@ -17,7 +17,7 @@ import hashlib
 import json
 import logging
 import shutil
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, fields
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable, Literal
@@ -25,7 +25,13 @@ from typing import Any, Iterable, Literal
 import numpy as np
 import pandas as pd
 
-from core.data.provider import SYMBOL_SPEC_COST_FIELDS, SymbolSpec, SymbolSpecSnapshot, Timeframe
+from core.data.provider import (
+    MIN_SPREAD_M1_COLUMN,
+    SYMBOL_SPEC_COST_FIELDS,
+    SymbolSpec,
+    SymbolSpecSnapshot,
+    Timeframe,
+)
 from core.engine.backtester import BacktestResult
 from core.engine.costs import CommissionModel, CostModel, SpreadPolicy, SwapModel
 from core.metrics.ambiguity import uncertainty_band
@@ -68,6 +74,12 @@ class RunConfig:
     commission_per_lot_per_side: float = 0.0
     swap_mode: str = "points"
     session_threshold: float = 0.5
+    # Above M1 a per-bar spread is rebuilt from the M1 bars of the same
+    # period, and this is the point of their distribution that stands for
+    # "what a fill paid". It changes every cost in the run, so it belongs to
+    # the run's identity - the minimum, which is what the raw column holds,
+    # is not reachable from here.
+    per_bar_spread_quantile: float = 0.5
 
     def __post_init__(self) -> None:
         # `100` and `100.0` are the same configuration but serialize
@@ -79,6 +91,7 @@ class RunConfig:
             "spread_value",
             "commission_per_lot_per_side",
             "session_threshold",
+            "per_bar_spread_quantile",
         ):
             value = getattr(self, name)
             if value is not None:
@@ -93,7 +106,10 @@ class RunConfig:
         for field_name in ("start", "end"):
             value = data.get(field_name)
             data[field_name] = datetime.fromisoformat(value) if value else None
-        return cls(**data)
+        # a config stored before a field existed is still a valid config: it
+        # gets the default, and the run keeps the id it was saved under
+        known = {f.name for f in fields(cls)}
+        return cls(**{k: v for k, v in data.items() if k in known})
 
     @property
     def tf(self) -> Timeframe:
@@ -139,7 +155,12 @@ def data_fingerprint(bars: pd.DataFrame) -> str:
         return hashlib.sha256(b"empty").hexdigest()[:32]
     digest = hashlib.sha256()
     digest.update(np.ascontiguousarray(bars.index.asi8).tobytes())
-    for column in ("open", "high", "low", "close", "spread"):
+    # `spread` and `min_spread_m1` are the same field under the names it
+    # carries at M1 and above it, and a frame holds at most one of them, so
+    # hashing both in sequence leaves every pre-rename fingerprint unchanged.
+    # A frame carrying both has had its per-bar spread reconstructed from M1,
+    # which is a different cost input and must be a different fingerprint.
+    for column in ("open", "high", "low", "close", "spread", MIN_SPREAD_M1_COLUMN):
         if column in bars.columns:
             digest.update(np.ascontiguousarray(bars[column].to_numpy("float64")).tobytes())
     return digest.hexdigest()[:32]
@@ -171,6 +192,13 @@ class RunMeta:
     spec_hash: str
     data_hash: str
     symbol_spec_hash: str | None = None
+    # True for a run whose fills were charged the bars' aggregated spread
+    # column above M1 - the minimum of the M1 spreads inside each bar, not a
+    # spread. Such a run understated its costs by an amount nobody measured,
+    # and its numbers are not comparable with anything produced since. The
+    # engine can no longer create one; `scripts.mark_legacy_spread_runs`
+    # stamps the ones already on disk.
+    aggregated_spread_cost: bool = False
     bars: int = 0
     data_start: datetime | None = None
     data_end: datetime | None = None
@@ -187,7 +215,8 @@ class RunMeta:
         for name in ("created_at", "finished_at", "data_start", "data_end"):
             value = data.get(name)
             data[name] = datetime.fromisoformat(value) if value else None
-        return cls(**data)
+        known = {f.name for f in fields(cls)}
+        return cls(**{k: v for k, v in data.items() if k in known})
 
 
 @dataclass
@@ -214,6 +243,7 @@ class RunSummary:
     profit_factor: float | None = None
     win_rate: float | None = None
     ambiguous_trades: int | None = None
+    aggregated_spread_cost: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return json_safe(asdict(self))
@@ -322,6 +352,7 @@ class RunStore:
         benchmark_report: PerformanceReport | None = None,
         spec: StrategySpec | None = None,
         symbol_spec: SymbolSpec | None = None,
+        spread_coverage: Any = None,
     ) -> RunMeta:
         path = self.path_for(run_id)
         meta = self.load_meta(run_id)
@@ -360,6 +391,19 @@ class RunStore:
                     else {}
                 ),
             },
+            # what the spread policy charged, and whether that can be the cost
+            # of a real fill at this timeframe. Not optional: a net PnL with no
+            # statement about what it paid is not a result
+            "costs": (
+                result.spread_realism.as_dict() if result.spread_realism else None
+            ),
+            # how much of the period had an M1 sample to measure the spread on.
+            # A run charged a constant taken from a later period is not wrong,
+            # but it is an assumption, and the share of bars resting on it is
+            # the difference between a cost and a guess
+            "spread_coverage": (
+                spread_coverage.as_dict() if spread_coverage is not None else None
+            ),
             # what happened to the signals that never became trades: a gate
             # rejecting most of them is the strategy, not a safety margin
             "gates": gate_accounting(
@@ -481,6 +525,7 @@ class RunStore:
             profit_factor=strategy.get("profit_factor"),
             win_rate=strategy.get("win_rate"),
             ambiguous_trades=execution.get("ambiguous_trades"),
+            aggregated_spread_cost=bool(record.meta.aggregated_spread_cost),
         )
 
     # -- deletion --------------------------------------------------------

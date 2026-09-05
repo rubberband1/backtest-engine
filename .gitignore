@@ -39,9 +39,16 @@ node_modules/
 /runs/
 *.hc
 # Cached bar data. The two directories above already hold all of it; this
-# extension rule is the belt to their braces, and the reason a future test
-# fixture must not be stored as .parquet.
+# extension rule is the belt to their braces.
 *.parquet
+# ...except the synthetic fixture, which is the one dataset that is meant to
+# be in the repository: without it a clone has no data and nothing to run.
+# The negation works because no parent directory of it is excluded - `git`
+# will not look inside an ignored directory to find an un-ignored file.
+!/fixtures/data_cache/**/*.parquet
 
 # -- frontend build output -----------------------------------------------
 /ui/dist/
+
+# -- screenshots, regenerable from the running app -----------------------
+/shots/

@@ -6,16 +6,27 @@ so a spec with wrong parameters is rejected at load time and not mid-backtest.
 """
 from __future__ import annotations
 
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import Callable, Literal, Mapping
+from typing import Literal
 
 import pandas as pd
 from pydantic import BaseModel, ConfigDict, Field
 
+from core.data.provider import MIN_SPREAD_M1_COLUMN
 from core.indicators import functions as f
 
 PriceSource = Literal[
-    "open", "high", "low", "close", "tick_volume", "spread", "hl2", "hlc3", "ohlc4"
+    "open",
+    "high",
+    "low",
+    "close",
+    "tick_volume",
+    "spread",
+    "min_spread_m1",
+    "hl2",
+    "hlc3",
+    "ohlc4",
 ]
 
 
@@ -27,7 +38,25 @@ def resolve_source(bars: pd.DataFrame, source: PriceSource) -> pd.Series:
         return (bars["high"] + bars["low"] + bars["close"]) / 3.0
     if source == "ohlc4":
         return (bars["open"] + bars["high"] + bars["low"] + bars["close"]) / 4.0
+    if source not in bars.columns:
+        raise KeyError(missing_column_reason(bars, source))
     return bars[source]
+
+
+def missing_column_reason(bars: pd.DataFrame, column: str) -> str:
+    """Why a bar field is not there, said in terms of what to do about it."""
+    if column == "spread" and MIN_SPREAD_M1_COLUMN in bars.columns:
+        return (
+            f"these bars carry no {column!r}: above M1 the broker's field is "
+            f"{MIN_SPREAD_M1_COLUMN!r}, the minimum of the M1 spreads inside "
+            f"each bar. Reference it by that name if that is what you mean, or "
+            f"run with spread_mode 'per_bar', which rebuilds a real spread from "
+            f"the M1 sample of the same period"
+        )
+    return (
+        f"these bars carry no {column!r} column. Available: "
+        f"{', '.join(map(str, bars.columns))}"
+    )
 
 
 class _Params(BaseModel):
@@ -89,7 +118,7 @@ class IndicatorDef:
             args = [bars[column] for column in self.bar_inputs]
         else:
             source = validated.pop("source")
-            args = [resolve_source(bars, source)]  # type: ignore[arg-type]
+            args = [resolve_source(bars, source)]
         validated.pop("source", None)
         return self.fn(*args, **validated)
 

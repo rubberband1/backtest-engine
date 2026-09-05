@@ -13,7 +13,7 @@ from pathlib import Path
 
 from core.data.cache import ParquetCache
 from core.data.mt5_provider import MT5Provider
-from core.data.provider import Timeframe
+from core.data.provider import Timeframe, spread_column_for
 from core.data.quality import check_quality
 
 logger = logging.getLogger("download_year")
@@ -25,7 +25,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--timeframe", default="M1")
     parser.add_argument("--year", type=int, default=datetime.now(timezone.utc).year - 1)
     parser.add_argument("--cache", type=Path, default=Path("data_cache"))
-    parser.add_argument("--refresh", action="store_true", help="invalidate the year before downloading")
+    parser.add_argument(
+        "--refresh", action="store_true",
+        help="invalidate the year before downloading",
+    )
     parser.add_argument("--log-level", default="INFO")
     return parser.parse_args()
 
@@ -69,10 +72,14 @@ def main() -> None:
     report = check_quality(bars, args.symbol, timeframe)
     for line in report.as_text().splitlines():
         logger.info("%s", line)
+    # above M1 the field is the minimum of the M1 spreads inside the bar, and
+    # is named so: the label below says which of the two is being reported
+    spread_field = spread_column_for(timeframe)
     logger.info(
-        "median spread: %.1f points (%.5f in price)",
-        bars["spread"].median() if len(bars) else float("nan"),
-        (bars["spread"].median() * spec.point) if len(bars) else float("nan"),
+        "median %s: %.1f points (%.5f in price)",
+        spread_field,
+        bars[spread_field].median() if len(bars) else float("nan"),
+        (bars[spread_field].median() * spec.point) if len(bars) else float("nan"),
     )
 
 

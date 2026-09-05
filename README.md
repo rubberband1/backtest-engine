@@ -1,29 +1,42 @@
 # backtest-engine
 
+[![CI](https://github.com/rubberband1/backtest-engine/actions/workflows/ci.yml/badge.svg)](https://github.com/rubberband1/backtest-engine/actions/workflows/ci.yml)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10%20%7C%203.12-blue)](https://www.python.org/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![Checked with mypy](https://img.shields.io/badge/mypy-checked-2a6db2)](https://mypy-lang.org/)
+[![Linted with ruff](https://img.shields.io/badge/ruff-clean-d7ff64)](https://docs.astral.sh/ruff/)
+
+
 **A backtesting engine for MetaTrader 5 data, built so that it cannot flatter
-a strategy. Its first campaign screened 300 configurations — 10 classic
-strategies across 10 instruments and 3 timeframes — and reported that none of
-them survives the correction for having tried 300 things. That is the result,
-and the engine is what makes it trustworthy.**
+a strategy. Across two campaigns it has screened 600 configurations — 10
+classic strategies over 10 instruments and up to six years of history — and
+reported that none of them survives the correction for having tried 600
+things. That is the result, and the engine is what makes it trustworthy.**
 
-The best cell of the campaign scored a Sharpe per trade of **+0.3448**. A
-search of 300 attempts is expected to reach **+0.2830** by luck alone, and
-the observed value would have to clear **+0.6042** to be credible at 95%
-confidence. It does not. Zero cells survive Bonferroni. The engine says so in
-one line, on screen, above the results table.
+The best cell with enough trades to mean anything scores a Sharpe per trade of
+**+0.1990** over 172 trades. A search of 600 attempts is expected to reach
+**+0.3097** by luck alone, and the observed value would have to clear
+**+0.4415** to be credible at 95% confidence. It does not. Zero cells survive
+Bonferroni. The engine says so in one line, on screen, above the results
+table.
 
-The interesting failure is the one that looks like a success: the same
-campaign contains a cell that turned 100 into 4,666 over a year on gold at
-M5, annualized Sharpe 2.95, p = 0.02. It is a false positive — 64.8% maximum
-drawdown, a Sharpe per trade an order of magnitude below the corrected
-threshold, and half its signals discarded by a risk gate nobody was
-watching. A backtester that reports only the equity curve sells that cell as
-a discovery. This one does not.
+The most valuable thing it has produced is not a strategy but a correction to
+its own arithmetic. Measured against the M1 bars inside them, **the `spread`
+column of every bar above M1 turns out to be the *minimum* spread inside that
+bar** — matching in 100.0% of four thousand hours on each of three
+instruments. Charged as a transaction cost it bills the best price of the
+period: 4 points instead of 29 on WTI at H1, and exactly zero on four FX
+instruments, where 67–76% of hourly bars carry a zero spread. Every backtest
+run that way had been trading for free on most bars. The engine now measures
+the spread where the field means something, states what each run actually
+charged, and refuses to call a pair testable when the broker's cut is too
+large a share of the stop — before any strategy is run on it.
 
-*There is not a single line of code here that can send an order.* The project
-exists to answer one question honestly: given these bars, these costs and
-this spec, what would have happened — and how much of that is statistically
-meaningful?
+*Nothing sends an order unless you ask twice.* The research half of the
+codebase cannot trade at all; the live runner defaults to dry run, refuses a
+non-demo account when told to send, and shares its execution engine with the
+backtester — a blocking test replays history through it and demands the same
+trades, to the timestamp and the price.
 
 ### What that costs, in engineering
 
@@ -46,27 +59,98 @@ Getting to an honest "no" takes more machinery than getting to a hopeful
   baseline that assumption was worth twelve points of final equity, the
   difference between −10% and +1.5%. Every run reports both ends of it.
 - **Silent filters are made loud.** Risk gates report what share of signals
-  they rejected; one gate was quietly discarding half of them.
+  they rejected, on every row; one gate was quietly discarding half of them.
+  When a run stops trading because the account fell below the broker's
+  minimum lot, it says that too, rather than presenting a busted account as a
+  cautious one.
 - **A golden test pins the baseline** to the trade, so a change in results
   has to be declared rather than discovered later.
-- 361 tests, including one that recomputes signals on truncated history to
-  prove no rule can see the future.
+- **The simulator and the trader are the same code.** The execution rules
+  live in one state machine; the backtester drives it over a DataFrame and
+  the live runner drives it bar by bar. A replay test demands identical
+  trades and fails the build otherwise.
+- **A campaign freezes its own inputs.** `tick_value` follows an FX rate and
+  moves while a campaign runs, so every cell used to be executed against a
+  slightly different contract and re-running one never reproduced it. A
+  campaign now writes a manifest, and one command re-runs it from that and
+  diffs cell by cell. With `tick_value` moved underneath it, the same
+  campaign re-run without the manifest reported a different net PnL; from the
+  manifest it matched exactly, and the drift was printed as drift.
+- **The spread says whether it was measured or assumed.** Where no M1 bars
+  exist, the cost charged is a constant taken from a later period. Every run
+  and every campaign cell now reports the share of its bars that had an M1
+  sample behind them. The best cell of the campaign above reads **0.0%**.
+- 571 tests, including one that recomputes signals on truncated history to
+  prove no rule can see the future, one that demands a dry-run diary compare
+  to its own backtest at exactly zero, and one that regenerates the shipped
+  dataset and diffs it against what is committed.
 
 Findings are written down even when they contradict the reason the feature
 was built: normalizing exits on ATR was supposed to make instruments
 comparable, and measurement showed it made the dispersion *worse* — that is
-in the docs next to the feature.
+in the docs next to the feature. The same goes for mistakes in the statistics
+themselves. The deflated-Sharpe correction was, for one campaign, fed the
+per-trade Sharpe of cells with two trades; those reach ±10 by arithmetic
+alone and pushed the corrected threshold to an unreachable +4.77. A threshold
+nothing can clear is not a strict test, it is a broken one, and the changelog
+says so.
 
-## Requirements
+## Quick start
 
-- Windows, Python 3.10+
-- MetaTrader 5 terminal installed, running and logged in (for downloads;
-  cached data works offline)
+Python 3.10 or newer, and Node 20+ for the dashboard. Nothing else: **no
+MetaTrader 5 terminal, no broker account, no network.**
 
 ```
+git clone https://github.com/rubberband1/backtest-engine
+cd backtest-engine
 python -m venv .venv
-.venv\Scripts\python -m pip install -e ".[dev]"
+.venv/Scripts/python -m pip install -e ".[dev]"     # Linux/macOS: .venv/bin/python
+.venv/Scripts/python run.py
 ```
+
+The browser opens on the dashboard with data already in it. The repository
+ships a small **synthetic** dataset (`fixtures/data_cache/`, two invented
+instruments over 2022-2023 on M1/H1/H4/D1), and `run.py` serves it whenever
+`data_cache/` is empty — which is the case on a fresh clone.
+
+> **The fixture data is invented.** It is a random walk with a plausible
+> spread, session week and volume profile bolted on. Every metric computed on
+> it — Sharpe, drawdown, p-value — describes a random number generator. The
+> dashboard says so in a banner on every page, the API says so in
+> `/api/health`, and the cache provenance records `synthetic_fixture` on
+> every file. It exists so the engine can be run and read, not so anything
+> can be concluded. Nothing in the results reported in this README was
+> measured on it.
+
+Run the tests, which do not need a terminal either:
+
+```
+.venv/Scripts/python -m pytest -q     # 562 pass, 9 skip on a fresh clone
+```
+
+Nine skips, and each says why. Eight are marked `mt5` and talk to the
+MetaTrader 5 terminal. The ninth is the golden reference measured on real
+XAUUSD.r bars, which only exist on the machine that downloaded them — but the
+*second* golden reference, measured on the committed fixture, does run, so a
+clone still has the guard that pins the engine's output to the trade.
+
+Everything else — the engine, the cost model, the statistics, the API, the
+live runner's replay equivalence — runs on generated or fixture data.
+
+### With a real broker
+
+To measure anything, you need real bars, and for those you need the terminal:
+
+- Windows, with MetaTrader 5 installed, running and logged in
+- `pip install MetaTrader5` (already in the `dev` extra on Windows)
+
+```
+.venv/Scripts/python -m examples.download_year --symbol EURUSD --year 2023
+.venv/Scripts/python run.py
+```
+
+`run.py` prefers `data_cache/` over the fixture as soon as there is anything
+in it, and says on start-up which of the two it is serving.
 
 ## Layout
 
@@ -77,13 +161,18 @@ core/data/servertime.py    server time <-> UTC conversions (pure, testable)
 core/data/cache.py         Parquet cache per (symbol, timeframe, year) + JSON metadata
 core/data/quality.py       quality report: gaps, duplicates, NaN, malformed bars
 core/data/hc_reader.py     decoder for MT5's .hc cache (offline history)
+core/data/fixture_provider.py  synthetic bars, so the repo runs without MT5
 core/indicators/           pure functions + name -> function registry
+core/indicators/incremental.py  bar-at-a-time state, bit-exact with the above
 core/strategy/             pydantic spec, bar features, evaluator
+core/strategy/incremental.py    the condition tree on one bar, no history walked
 core/engine/               costs, sizing, risk gates, backtester
 core/strategy/exits.py     exit distances in points, for the a-priori reports
 core/metrics/              performance, break-even, buy & hold, uncertainty band, gates
 core/research/edge.py      gate zero: does the signal beat the spread?
+core/research/preview.py   what a spec will cost, before it is run
 core/research/screen.py    screening funnel + the campaign's own trial count
+core/research/manifest.py  a campaign's frozen inputs, so it can be re-run
 core/runs/                 run store, orchestration, golden snapshots
 core/validation/           walk-forward, permutation, multiple testing, tick resolve
 core/batch/                same spec over many instruments + cross-sectional consistency
@@ -94,6 +183,16 @@ strategies/                the JSON specs, including the library of classics
 tests/                     pytest; integration tests are marked `mt5`
 scripts/run_batch.py       batch runner driven by a YAML file
 scripts/run_screen.py      screening campaign driven by a YAML file
+scripts/verify_campaign.py re-runs a campaign from its manifest and diffs it
+scripts/make_fixture.py    regenerates the committed synthetic dataset
+scripts/run_live.py        the live runner, on closed bars
+scripts/compare_live.py    the forward test's diary against a backtest of it
+scripts/forward_test.ps1   start / stop / status / report, detached
+scripts/migrate_spread_column.py  one-shot: rename the raw column, mark old runs
+docs/forward-test.md       how to run the forward test and how to read it
+docs/methodology.md        the choices that decide results, and why
+docs/limitations.md        what this cannot tell you
+fixtures/data_cache/       the committed synthetic dataset (invented data)
 run.py                     starts everything and opens the browser
 ```
 
@@ -308,8 +407,20 @@ something peeks.
 Everything parametric on `SymbolSpec`: **no per-point value written in the
 code**.
 
-- **Spread** from the feed's `spread` column, bar by bar. Alternative
-  policies `fixed` and `quantile` for stress tests.
+- **Spread**, bar by bar, from a column that is a spread. On M1 that is the
+  feed's `spread`. **Above M1 the broker's field is the minimum of the M1
+  spreads inside the bar** — measured at 100% on three instruments over four
+  thousand periods each — so it is named `min_spread_m1` everywhere, and the
+  cost model refuses to charge it under any name. A per-bar spread above M1
+  is rebuilt from the M1 sample of the same period at the median or above
+  (`core.data.spread.attach`); where that sample is missing the run is
+  refused rather than served the column. Alternative policies `fixed` — the
+  honest choice when the number comes from a measurement — and `quantile`
+  for stress tests.
+
+  What it was worth, June 2025, raw column against reconstruction: on
+  GBPUSD.r, EURUSD.r and AUDUSD.r **daily** bars, 100%, 100% and 77% of fills
+  were charged a spread of zero.
 - **Commission** per lot per side.
 - **Swap** at every **server** midnight crossed (timezone from the data
   layer), triple on the Wednesday-to-Thursday night. `SymbolSpec` does not
@@ -672,6 +783,68 @@ equity, trades, comparison, deletion), statistical validation
 - `POST /api/runs/compare` also returns the **diff of the run
   configurations**: only the fields that differ, generically over any config
   field, so two runs differing only in cost policy are labeled as such.
+
+## Building a strategy
+
+A spec is JSON, and until phase 7 writing one meant writing JSON. The
+**Strategy** page builds the condition tree with controls — add a condition,
+pick an operator, pick operands, group into AND/OR, nest — over a vocabulary
+served by `/api/vocabulary` straight from the indicator registry. Nothing in
+the frontend duplicates that list, because a second copy is how a spec
+becomes valid on screen and invalid on the server. The JSON sits alongside,
+read-only, updating as you build: the format is learned by watching it
+change.
+
+What makes it worth having is the panel that says **what the strategy is
+about to cost, before any backtest runs** (`core/research/preview.py`, one
+API call, under a second on ten years of H4):
+
+- the **signal frequency** over the chosen instrument and period, from
+  evaluating the entry conditions alone — an upper bound on the trades, since
+  a signal born while a position is open never becomes one;
+- the **break-even win rate** the chosen exits imply, against the spread the
+  instrument was measured at on M1;
+- an a-priori estimate of the **share of ambiguous bars** — those wide enough
+  to touch both the stop and the target, which bar resolution cannot settle;
+- the **tradability verdict** for the pair, which is stage zero of the
+  screening funnel;
+- and, whether or not it is asked for, **how many attempts are already
+  registered on this instrument and period, and what per-trade Sharpe a
+  result would have to reach to survive that many.**
+
+Under thirty expected trades it says so first and plainly: a result over
+twenty trades is not a weak result, it is not a result.
+
+The last point is the reason the panel is not optional. An editor makes
+variants cheap to try, and trying variants is precisely how overfitting is
+manufactured — so a run launched from the editor goes through `/api/backtest`
+like every other, lands in the run store with its own spec hash, and is
+counted by `collect_trials` along with everything else. There is deliberately
+no path out of that page that produces a result the campaign does not count,
+and `tests/test_api.py` holds a test that says so.
+
+## The forward test
+
+`rsi-mean-reversion` on `AUDUSD.r` H4 runs in dry run against the demo
+account, writing every decision to a diary. It has no edge — it was the best
+cell of a 600-attempt campaign at +0.1990 per trade against a required
++0.4415 — and that is not what is under test. The infrastructure is.
+
+```powershell
+./scripts/forward_test.ps1 -Start     # detached; closing the shell does not stop it
+./scripts/forward_test.ps1 -Status
+./scripts/forward_test.ps1 -Report    # the diary against a backtest of the same period
+```
+
+The report is a decomposition rather than a score: slippage on trades both
+records took, the PnL of trades only one of them took with the reason the
+diary gives, and **the rest** — which should be zero, and is the first line
+to read. In dry run the slippage line should be zero too: no order was sent,
+both sides are the same engine over the same bars, and a number there means
+the runner and the backtester disagree.
+
+Full instructions, including what it survives and how, in
+[docs/forward-test.md](docs/forward-test.md).
 
 ## Dashboard
 

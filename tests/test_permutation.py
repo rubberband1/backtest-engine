@@ -209,7 +209,7 @@ def test_the_random_entry_null_reproduces_the_real_trade_count() -> None:
 def test_the_same_seed_gives_the_same_permutation_report() -> None:
     bars = random_walk(15000, seed=41)
     config = BacktestConfig(initial_equity=1000.0, costs=CostModel.zero())
-    kwargs = dict(iterations=8, seed=1234, max_workers=2)
+    kwargs = {"iterations": 8, "seed": 1234, "max_workers": 2}
     first = permutation_test(
         "random_entries", _spec(), bars, symbol_spec(), UTC, config, **kwargs
     )

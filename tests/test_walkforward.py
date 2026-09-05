@@ -1,6 +1,7 @@
 """Walk-forward: windows, embargo, trade-count gate, and no leakage."""
 from __future__ import annotations
 
+import itertools
 from datetime import datetime, timedelta, timezone
 
 import pandas as pd
@@ -272,7 +273,7 @@ def test_equity_is_carried_from_one_window_to_the_next() -> None:
     )
     evaluated = [window for window in report.windows if not window.skipped]
     assert len(evaluated) >= 2
-    for previous, following in zip(evaluated, evaluated[1:]):
+    for previous, following in itertools.pairwise(evaluated):
         assert following.equity_start == pytest.approx(previous.equity_end)
 
 

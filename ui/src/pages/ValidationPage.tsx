@@ -1,3 +1,4 @@
+import { NumberField } from "../components/NumberField";
 import { useEffect, useMemo, useState } from "react";
 import {
   Area,
@@ -179,21 +180,19 @@ function WalkForwardSection({ runId }: { runId: string }) {
             </select>
           </Field>
           <Field label="Train days" htmlFor="wf-train" hint="in-sample leg">
-            <input
+            <NumberField
               id="wf-train"
-              type="number"
               min={1}
               value={trainDays}
-              onChange={(event) => setTrainDays(Number(event.target.value))}
+              onChange={(value) => setTrainDays(value ?? 1)}
             />
           </Field>
           <Field label="Test days" htmlFor="wf-test" hint="out-of-sample leg, and the step">
-            <input
+            <NumberField
               id="wf-test"
-              type="number"
               min={1}
               value={testDays}
-              onChange={(event) => setTestDays(Number(event.target.value))}
+              onChange={(value) => setTestDays(value ?? 1)}
             />
           </Field>
           <Field
@@ -201,12 +200,11 @@ function WalkForwardSection({ runId }: { runId: string }) {
             htmlFor="wf-min"
             hint="below this the window is discarded"
           >
-            <input
+            <NumberField
               id="wf-min"
-              type="number"
               min={0}
               value={minTrades}
-              onChange={(event) => setMinTrades(Number(event.target.value))}
+              onChange={(value) => setMinTrades(value ?? 0)}
             />
           </Field>
           <Field
@@ -597,14 +595,13 @@ function PermutationSection({ runId }: { runId: string }) {
             htmlFor="perm-n"
             hint="per test; 1000 takes about a minute"
           >
-            <input
+            <NumberField
               id="perm-n"
-              type="number"
               min={10}
               max={20000}
               step={100}
               value={iterations}
-              onChange={(event) => setIterations(Number(event.target.value))}
+              onChange={(value) => setIterations(value ?? 10)}
             />
           </Field>
         </div>

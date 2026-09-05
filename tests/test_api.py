@@ -4,8 +4,8 @@ from __future__ import annotations
 import importlib
 import json
 import time
-from pathlib import Path
-from typing import Any, Iterator
+from collections.abc import Iterator
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -20,13 +20,19 @@ SYMBOL = "SYNTH"
 OTHER_SYMBOL = "SYNTH2"
 
 
-def _bars(n: int = 4000, seed: int = 5) -> pd.DataFrame:
-    """Synthetic bars with some guaranteed signals and a variable spread."""
+def _bars(n: int = 4000, seed: int = 5, spread: tuple[int, int] = (2, 8)) -> pd.DataFrame:
+    """Synthetic bars with some guaranteed signals and a variable spread.
+
+    The spread range is deliberately small against this walk's ATR (~72
+    points): the screening refuses a cell whose spread exceeds a share of the
+    stop distance, and a fixture that trips that refusal would test stage zero
+    instead of what these tests are about.
+    """
     bars = random_walk(n, seed=seed)
     index = pd.date_range("2024-01-01", periods=n, freq="1min", tz="UTC", name="time")
     bars.index = index
     rng = np.random.default_rng(seed)
-    bars["spread"] = rng.integers(8, 20, n).astype(float)
+    bars["spread"] = rng.integers(*spread, n).astype(float)
     return bars
 
 
@@ -742,6 +748,10 @@ def test_a_screening_campaign_runs_as_a_polled_job(client: TestClient) -> None:
     assert report["panel"]["attempts"] == 2
     assert len(report["cells"]) == 2
     assert report["verdict"]
+    # stage zero ran and admitted them: the table has to say so explicitly
+    assert report["tradability"] is not None
+    assert report["tradability"]["excluded"] == 0
+    assert all(cell["counts_as_attempt"] for cell in report["cells"])
 
 
 def test_an_unknown_screening_job_says_where_the_campaigns_live(
@@ -771,3 +781,162 @@ def test_a_grid_adds_its_candidates_to_the_trial_family(client: TestClient) -> N
     if with_grid["deflated_sharpe"]["valid"]:
         assert with_grid["deflated_sharpe"]["expected_max_sharpe"] is not None
         assert 0.0 <= with_grid["deflated_sharpe"]["deflated_sharpe"] <= 1.0
+
+
+# -- the strategy builder -------------------------------------------------
+
+
+def test_the_vocabulary_comes_from_the_registry(client: TestClient) -> None:
+    """The editor renders what the engine accepts, and nothing else.
+
+    A second copy of this list in the frontend is how a spec becomes valid on
+    screen and invalid on the server, so the endpoint exists precisely to
+    make that copy unnecessary.
+    """
+    from core.indicators import registry
+
+    payload = client.get("/api/vocabulary").json()
+    assert [item["name"] for item in payload["indicators"]] == registry.available()
+
+    rsi = next(item for item in payload["indicators"] if item["name"] == "rsi")
+    params = {param["name"]: param for param in rsi["params"]}
+    assert params["period"]["default"] == 14
+    assert params["period"]["minimum"] == 1
+    assert params["source"]["choices"] and "close" in params["source"]["choices"]
+
+    bollinger = next(item for item in payload["indicators"] if item["name"] == "bollinger")
+    assert bollinger["outputs"] == ["middle", "upper", "lower", "width"]
+    atr = next(item for item in payload["indicators"] if item["name"] == "atr")
+    assert atr["bar_inputs"] == ["high", "low", "close"]
+
+    assert "lower_wick_ratio" in payload["features"]
+    assert "cross_above" in payload["comparison_operators"]
+    assert payload["exit_level_types"] == ["points", "percent", "atr"]
+    assert "M1" in payload["timeframes"] and "H4" in payload["timeframes"]
+
+
+def test_saving_a_strategy_refuses_to_overwrite_by_accident(client: TestClient) -> None:
+    """Duplicate-and-modify is the likely flow: it must not eat the original."""
+    spec = {**SPEC, "id": "builder-made", "name": "built in the editor"}
+    created = client.post("/api/strategies", json={"spec": spec})
+    assert created.status_code == 200, created.text
+    assert created.json()["created"] is True
+    assert created.json()["file"] == "builder-made.json"
+
+    again = client.post("/api/strategies", json={"spec": spec})
+    assert again.status_code == 409
+    assert "already exists" in again.json()["detail"]
+
+    replaced = client.post("/api/strategies", json={"spec": spec, "overwrite": True})
+    assert replaced.status_code == 200
+    assert replaced.json()["created"] is False
+
+    listed = {item["id"] for item in client.get("/api/strategies").json()}
+    assert "builder-made" in listed and "api-test" in listed
+
+
+def test_saving_an_invalid_spec_says_what_is_wrong(client: TestClient) -> None:
+    broken = {**SPEC, "id": "never-written", "indicators": [
+        {"id": "x", "type": "not-an-indicator", "params": {}}
+    ]}
+    response = client.post("/api/strategies", json={"spec": broken})
+    assert response.status_code == 422
+    assert "not-an-indicator" in response.json()["detail"]
+
+
+def test_a_strategy_id_cannot_escape_the_folder(client: TestClient) -> None:
+    """The id becomes a file name and the input comes from a browser."""
+    for bad in ("../escape", "with/slash", ".hidden", "with space"):
+        response = client.post("/api/strategies", json={"spec": {**SPEC, "id": bad}})
+        assert response.status_code == 400, bad
+        assert "file name" in response.json()["detail"]
+
+
+def test_preview_reports_what_a_run_would_cost_before_running_it(
+    client: TestClient,
+) -> None:
+    response = client.post(
+        "/api/strategies/preview",
+        json={"strategy_id": "api-test", "config": config()},
+    )
+    assert response.status_code == 200, response.text
+    payload = response.json()
+
+    assert payload["symbol"] == SYMBOL
+    assert payload["bars"] > 0
+    assert payload["signals_total"] == payload["signals_long"] + payload["signals_short"]
+    assert payload["trades_upper_bound"] == payload["signals_total"]
+    assert payload["min_judgeable_trades"] == 30
+    assert payload["judgeable"] == (payload["signals_total"] >= 30)
+    assert payload["verdict"]
+    # the attempts panel is always present: it is the warning the editor
+    # exists to keep in front of whoever is building variants
+    assert payload["attempts"]["symbol"] == SYMBOL
+    assert payload["attempts"]["verdict"]
+    assert payload["breakeven"] is not None
+    assert payload["ambiguity"] is not None
+
+
+def test_preview_says_plainly_when_there_will_be_too_few_trades(
+    client: TestClient,
+) -> None:
+    """Under thirty trades a result is not weak, it is absent."""
+    silent = {
+        **SPEC,
+        "id": "almost-never",
+        "entry": {
+            "long": {"op": "lt", "left": {"ref": "rsi"}, "right": {"const": 0.5}},
+            "short": None,
+        },
+    }
+    payload = client.post(
+        "/api/strategies/preview", json={"spec": silent, "config": config()}
+    ).json()
+
+    assert payload["signals_total"] < 30
+    assert payload["judgeable"] is False
+    assert "judgeable" in payload["verdict"] or "nothing to test" in payload["verdict"]
+
+
+def test_preview_of_an_invalid_spec_is_a_readable_422(client: TestClient) -> None:
+    response = client.post(
+        "/api/strategies/preview",
+        json={"spec": {**SPEC, "entry": {"long": None, "short": None}}, "config": config()},
+    )
+    assert response.status_code == 422
+    assert "entry" in response.json()["detail"]
+
+
+def test_a_run_launched_from_the_editor_is_counted_like_any_other(
+    client: TestClient,
+) -> None:
+    """B3: there must be no path that produces a result the campaign misses.
+
+    A spec sent inline - the editor's own case, before it is even saved -
+    lands in the run store with its own spec hash, which is what
+    `collect_trials` counts. If this ever stops holding, the multiple-testing
+    correction starts understating the size of the search.
+    """
+    inline = {**SPEC, "id": "unsaved-variant", "exit": {**SPEC["exit"],
+                                                        "take_profit": {"type": "points",
+                                                                        "value": 90}}}
+    response = client.post(
+        "/api/backtest", json={"spec": inline, "config": config()}
+    )
+    assert response.status_code == 200, response.text
+    run_id = response.json()["run_id"]
+    for _ in range(60):
+        detail = client.get(f"/api/runs/{run_id}").json()
+        if detail["status"] != "running":
+            break
+        time.sleep(0.2)
+    assert detail["status"] == "done", detail.get("error")
+    assert detail["spec"]["id"] == "unsaved-variant"
+
+    before = client.post(
+        "/api/strategies/preview", json={"spec": inline, "config": config()}
+    ).json()["attempts"]["attempts"]
+    assert before >= 1
+
+    listed = {item["run_id"] for item in client.get("/api/runs").json()}
+    assert run_id in listed

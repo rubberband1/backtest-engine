@@ -142,7 +142,8 @@ def execute_golden(
         ),
     )
     strategy_report = compute_metrics(
-        result.trades, result.equity, result.timeframe, config.initial_equity, spec.id
+        result.trades, result.equity, result.timeframe, config.initial_equity,
+        spec.id, server_tz=server_tz,
     )
     return {
         "spec_hash": spec_hash(spec),

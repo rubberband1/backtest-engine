@@ -1,82 +1,45 @@
 """Event-driven backtest engine.
 
-Iterates bar by bar. The execution rules below are what decide whether a
-result is credible or a fantasy:
+The execution rules live in `core.engine.execution` and are shared with the
+live runner: this module only turns a DataFrame into the stream of closed
+bars that state machine consumes, and collects what comes out. Nothing here
+decides anything about a trade.
 
-1. A signal is born on the **close** of bar t and executed at the **open** of
-   t+1. Never on the bar that generated it.
-2. MT5 feed bars are **bid** prices. A BUY enters at `open + spread` (ask) and
-   exits on the bid; a SELL enters on the bid and exits on the ask. The same
-   prices apply to stop and target touch tests: a stop on a short position is
-   evaluated on the ask, not the bid, or it fires too late.
-3. **Gaps**: if a bar opens beyond the stop, the fill is at the open price,
-   not at the stop level. Same for the take profit. This is the difference
-   between a real loss tail and one truncated by construction.
-4. If stop and target are both touched within the **same bar**, the stop is
-   assumed. The trade is flagged `ambiguous`: without tick data there is no
-   way to know which came first, and the count must be watched.
-5. The time stop counts **session** bars, not array rows.
-6. The gates in `risk.py` are the same ones the future live runner will use.
-7. Stop and target distances come from the spec in points, in percent of the
-   entry price, or as a multiple of an ATR read on the **signal** bar - the
-   last closed bar when the trade was decided, since the execution bar's own
-   range does not exist yet. Whatever the source, the distance is fixed at
-   entry and never recomputed: this is a volatility-sized stop, not a
-   trailing one. If the ATR is still in warm-up the entry is skipped, never
-   filled with a fabricated distance.
+Keeping the decisions in one place is what makes
+`tests/test_replay_equivalence.py` possible: the runner replaying history has
+to produce identical trades, and it does so because it runs the same code,
+not because two implementations were kept in step by hand.
+
+Signal timing, fills on gaps, ambiguous bars, the session-bar time stop and
+the risk gates are documented where they are implemented.
 """
 from __future__ import annotations
 
 import logging
 from collections import Counter
 from dataclasses import dataclass, field
-from datetime import datetime, tzinfo
-from typing import Literal
+from datetime import tzinfo
 
 import numpy as np
 import pandas as pd
 
 from core.data.provider import SymbolSpec, Timeframe
-from core.engine.costs import CostModel, money_per_point
-from core.engine.risk import RiskGate, RiskState
-from core.engine.session import session_ordinals
-from core.engine.sizing import lots_for
+from core.engine.costs import CostModel, SpreadRealism
+from core.engine.execution import TRADE_COLUMNS, BarInput, Executor, ExitReason
+from core.engine.session import SessionCalendar, session_ordinals
 from core.strategy.evaluator import Signals, evaluate
-from core.strategy.spec import Level, StrategySpec
+from core.strategy.spec import AtrLevel, Level, StrategySpec
 
 logger = logging.getLogger(__name__)
 
-ExitReason = Literal[
-    "stop_loss", "take_profit", "gap_stop_loss", "gap_take_profit", "time_stop",
-    "signal_exit", "end_of_data",
+__all__ = [
+    "TRADE_COLUMNS",
+    "BacktestConfig",
+    "BacktestResult",
+    "Backtester",
+    "ExitReason",
+    "run_backtest",
 ]
-
-TRADE_COLUMNS: tuple[str, ...] = (
-    "direction",
-    "entry_time",
-    "entry_price",
-    # the levels actually placed, in price. With ATR or percent exits the
-    # distance is a function of the entry bar and cannot be reconstructed from
-    # the spec afterwards, so the trade record carries it.
-    "stop_level",
-    "target_level",
-    "exit_time",
-    "exit_price",
-    "exit_reason",
-    "lots",
-    "bars_held",
-    "session_bars_held",
-    "gross_pnl",
-    "spread_points",
-    "spread_cost",
-    "commission",
-    "swap",
-    "net_pnl",
-    "risk_money",
-    "r_multiple",
-    "ambiguous",
-    "crossed_gap",
-)
 
 
 @dataclass
@@ -86,6 +49,11 @@ class BacktestConfig:
     initial_equity: float = 100.0
     costs: CostModel = field(default_factory=CostModel)
     session_threshold: float = 0.5
+    # Pinning the session calendar makes the time stop reproducible outside
+    # this DataFrame. Left None it is inferred from the bars, as before; the
+    # live runner pins the one it inferred from history, so that replaying the
+    # same period counts the same session bars.
+    session_calendar: SessionCalendar | None = None
 
 
 @dataclass
@@ -100,6 +68,10 @@ class BacktestResult:
     # signals that reached the entry stage, i.e. the denominator of the gate
     # accounting: a signal born while a position is open is one of these too
     entry_attempts: int = 0
+    # what the spread policy actually charged, and whether that can be a real
+    # fill cost at this timeframe. Travels with the result so no number can be
+    # read without it.
+    spread_realism: SpreadRealism | None = None
 
     @property
     def ambiguous_trades(self) -> int:
@@ -114,23 +86,44 @@ class BacktestResult:
         return float(self.equity.iloc[-1]) if len(self.equity) else self.initial_equity
 
 
-@dataclass
-class _Position:
-    direction: int
-    entry_index: int
-    entry_time: datetime
-    entry_price: float
-    entry_raw: float
-    lots: float
-    value_per_point: float
-    stop_level: float | None
-    target_level: float | None
-    entry_spread_points: float
-    risk_money: float
-
-
 def _empty_trades() -> pd.DataFrame:
     return pd.DataFrame({name: pd.Series(dtype="object") for name in TRADE_COLUMNS})
+
+
+def trades_frame(trades: list[dict[str, object]]) -> pd.DataFrame:
+    """The trade records as the typed frame every consumer expects."""
+    if not trades:
+        return _empty_trades()
+    frame = pd.DataFrame(trades, columns=list(TRADE_COLUMNS))
+    frame["entry_time"] = pd.to_datetime(frame["entry_time"], utc=True)
+    frame["exit_time"] = pd.to_datetime(frame["exit_time"], utc=True)
+    for column in TRADE_COLUMNS:
+        if column not in ("entry_time", "exit_time", "exit_reason", "ambiguous",
+                          "crossed_gap"):
+            frame[column] = pd.to_numeric(frame[column])
+    return frame
+
+
+def exit_indicator_series(
+    strategy: StrategySpec, signals: Signals, length: int
+) -> tuple[np.ndarray, np.ndarray]:
+    """Indicator values the exit levels reference, aligned to the signal bar.
+
+    Position i holds the value that decides the exit distance of a trade
+    executed at bar i - which is the value at bar i-1, the last closed bar
+    when that trade was decided. Levels that need no indicator get NaN, and
+    the executor never looks at them.
+    """
+
+    def shifted(level: Level | None) -> np.ndarray:
+        out = np.full(length, np.nan, dtype="float64")
+        if not isinstance(level, AtrLevel):
+            return out
+        series = signals.indicators[level.indicator].to_numpy(dtype="float64")
+        out[1:] = series[: length - 1]
+        return out
+
+    return shifted(strategy.exit.stop_loss), shifted(strategy.exit.take_profit)
 
 
 class Backtester:
@@ -143,16 +136,21 @@ class Backtester:
         server_tz: tzinfo,
         config: BacktestConfig | None = None,
     ) -> None:
-        if strategy.risk.max_open_positions > 1:
-            raise NotImplementedError(
-                "max_open_positions > 1 is not supported: the engine holds one "
-                "position at a time"
-            )
         self.strategy = strategy
         self.symbol = symbol_spec
         self.server_tz = server_tz
         self.config = config or BacktestConfig()
-        self.gate = RiskGate(strategy.risk, server_tz)
+        # built here so an unsupported spec fails before any data work
+        self._new_executor()
+
+    def _new_executor(self) -> Executor:
+        return Executor(
+            self.strategy,
+            self.symbol,
+            self.server_tz,
+            self.config.costs,
+            self.config.initial_equity,
+        )
 
     def run(self, bars: pd.DataFrame, signals: Signals | None = None) -> BacktestResult:
         """Executes the spec over `bars`.
@@ -177,15 +175,48 @@ class Backtester:
 
         if signals is None:
             signals = evaluate(self.strategy, bars, self.symbol.point)
-        spread_points = self.config.costs.spread.series(bars).to_numpy()
-        spread_price = spread_points * self.symbol.point
+        realism = self.config.costs.spread.realism(bars, timeframe)
+        for warning in realism.warnings:
+            logger.warning("spread policy: %s", warning)
 
+        executor = self._new_executor()
+        equity_curve = np.empty(len(bars), dtype="float64")
+        for position, bar in enumerate(self.bar_stream(bars, signals, timeframe)):
+            equity_curve[position] = executor.step(bar)
+
+        # a position still open at the end of the data is closed and flagged
+        if executor.position is not None:
+            executor.finalize()
+            equity_curve[-1] = executor.realized
+
+        frame = trades_frame(executor.trades)
+        equity = pd.Series(equity_curve, index=bars.index, name="equity")
+        self._log_summary(frame, executor.blocked)
+        return BacktestResult(
+            frame, equity, executor.blocked, signals, self.config.initial_equity,
+            self.strategy.instrument.symbol, timeframe, executor.entry_attempts,
+            realism,
+        )
+
+    # -- the stream ------------------------------------------------------
+
+    def bar_stream(
+        self, bars: pd.DataFrame, signals: Signals, timeframe: Timeframe
+    ) -> list[BarInput]:
+        """The closed bars of `bars`, as the executor sees them."""
+        spread_points = self.config.costs.spread.series(bars, timeframe).to_numpy()
         open_ = bars["open"].to_numpy(dtype="float64")
         high = bars["high"].to_numpy(dtype="float64")
         low = bars["low"].to_numpy(dtype="float64")
         close = bars["close"].to_numpy(dtype="float64")
         times = bars.index.to_pydatetime()
-        ordinals = session_ordinals(bars.index, timeframe, self.config.session_threshold)
+        ordinals = session_ordinals(
+            bars.index,
+            timeframe,
+            self.config.session_threshold,
+            self.config.session_calendar,
+            self.server_tz,
+        )
 
         long_signal = signals.long.to_numpy()
         short_signal = signals.short.to_numpy()
@@ -194,338 +225,27 @@ class Backtester:
             if signals.exit_signal is not None
             else np.zeros(len(bars), dtype=bool)
         )
+        stop_indicator, target_indicator = exit_indicator_series(
+            self.strategy, signals, len(bars)
+        )
 
-        time_stop = self.strategy.exit.time_stop.bars if self.strategy.exit.time_stop else None
-
-        state = RiskState()
-        blocked: Counter[str] = Counter()
-        trades: list[dict[str, object]] = []
-        equity_curve = np.empty(len(bars), dtype="float64")
-        realized = self.config.initial_equity
-        position: _Position | None = None
-        pending_entry: int = 0
-        pending_exit: ExitReason | None = None
-        entry_attempts = 0
-
-        for i in range(len(bars)):
-            # 1. exits decided on the previous close: filled at the open price
-            if position is not None and pending_exit is not None:
-                exit_price = (
-                    open_[i] + spread_price[i] if position.direction < 0 else open_[i]
-                )
-                trades.append(
-                    self._close(position, i, float(exit_price), spread_price[i],
-                                pending_exit, times, ordinals, spread_points)
-                )
-                realized += float(trades[-1]["net_pnl"])
-                state.register_exit(times[i])
-                position = None
-            pending_exit = None
-
-            # 2. entries decided on the previous close
-            if position is None and pending_entry:
-                entry_attempts += 1
-                position = self._try_open(
-                    pending_entry, i, open_, spread_points, spread_price, times, realized,
-                    state, blocked, signals.indicators,
-                )
-            pending_entry = 0
-
-            # 3. intrabar stop and target on the current bar
-            if position is not None:
-                closed = self._check_levels(position, i, open_, high, low, spread_price)
-                if closed is not None:
-                    price, reason, ambiguous = closed
-                    trades.append(
-                        self._close(position, i, price, spread_price[i], reason, times,
-                                    ordinals, spread_points, ambiguous)
-                    )
-                    realized += float(trades[-1]["net_pnl"])
-                    state.register_exit(times[i])
-                    position = None
-
-            # 4. time stop and signal exit: decided on close, executed at t+1
-            if position is not None:
-                elapsed = int(ordinals[i] - ordinals[position.entry_index])
-                if time_stop is not None and elapsed >= time_stop:
-                    pending_exit = "time_stop"
-                elif exit_signal[i]:
-                    pending_exit = "signal_exit"
-
-            # 5. new signals from this bar's close
-            signal = 0
-            if long_signal[i] and not short_signal[i]:
-                signal = 1
-            elif short_signal[i] and not long_signal[i]:
-                signal = -1
-            if signal:
-                if position is None and pending_exit is None:
-                    pending_entry = signal
-                else:
-                    # a signal born while the engine is already committed never
-                    # reaches the risk gates: counting it here is the only way
-                    # it does not silently vanish from the accounting
-                    blocked["position_open"] += 1
-
-            equity_curve[i] = realized + self._floating(position, close[i], spread_price[i])
-
-        # 6. position still open at the end of the data: closed and flagged
-        if position is not None:
-            last = len(bars) - 1
-            final_price = (
-                close[last] + spread_price[last] if position.direction < 0 else close[last]
+        return [
+            BarInput(
+                time=times[i],
+                open=float(open_[i]),
+                high=float(high[i]),
+                low=float(low[i]),
+                close=float(close[i]),
+                spread_points=float(spread_points[i]),
+                ordinal=int(ordinals[i]),
+                long=bool(long_signal[i]),
+                short=bool(short_signal[i]),
+                exit_signal=bool(exit_signal[i]),
+                stop_indicator=float(stop_indicator[i]),
+                target_indicator=float(target_indicator[i]),
             )
-            trades.append(
-                self._close(position, last, float(final_price), spread_price[last],
-                            "end_of_data", times, ordinals, spread_points)
-            )
-            realized += float(trades[-1]["net_pnl"])
-            equity_curve[last] = realized
-
-        frame = pd.DataFrame(trades, columns=list(TRADE_COLUMNS)) if trades else _empty_trades()
-        if len(frame):
-            frame["entry_time"] = pd.to_datetime(frame["entry_time"], utc=True)
-            frame["exit_time"] = pd.to_datetime(frame["exit_time"], utc=True)
-            for column in TRADE_COLUMNS:
-                if column not in ("entry_time", "exit_time", "exit_reason", "ambiguous",
-                                  "crossed_gap"):
-                    frame[column] = pd.to_numeric(frame[column])
-
-        equity = pd.Series(equity_curve, index=bars.index, name="equity")
-        self._log_summary(frame, blocked)
-        return BacktestResult(
-            frame, equity, blocked, signals, self.config.initial_equity,
-            self.strategy.instrument.symbol, timeframe, entry_attempts,
-        )
-
-    # -- entry -----------------------------------------------------------
-
-    def _exit_distance(
-        self,
-        level: Level | None,
-        entry_price: float,
-        signal_bar: int,
-        indicators: dict[str, pd.Series],
-    ) -> tuple[float | None, bool]:
-        """Distance in price of a stop/target level, and whether it is usable.
-
-        `(None, True)` means the level is simply not configured; `(None,
-        False)` means it is configured but its indicator is still in warm-up,
-        which is a reason to skip the entry rather than to invent a distance.
-        """
-        if level is None:
-            return None, True
-        if level.type == "points":
-            return level.value * self.symbol.point, True
-        if level.type == "percent":
-            return entry_price * level.value / 100.0, True
-        if level.type == "atr":
-            # the signal bar is the last closed bar when the trade was
-            # decided: the execution bar's own range does not exist yet
-            value = float(indicators[level.indicator].iloc[signal_bar])
-            if not np.isfinite(value) or value <= 0:
-                return None, False
-            return value * level.mult, True
-        raise ValueError(f"unrecognized exit level type: {level.type}")
-
-    def _try_open(
-        self,
-        direction: int,
-        i: int,
-        open_: np.ndarray,
-        spread_points: np.ndarray,
-        spread_price: np.ndarray,
-        times: np.ndarray,
-        equity: float,
-        state: RiskState,
-        blocked: Counter[str],
-        indicators: dict[str, pd.Series],
-    ) -> _Position | None:
-        decision = self.gate.check_entry(times[i], float(spread_points[i]), state)
-        if not decision.allowed:
-            # by code, never by the human reason: that one carries the numbers
-            # of the single decision and would give one bucket per spread value
-            blocked[decision.code or "risk_gate"] += 1
-            return None
-
-        lots = lots_for(self.strategy.sizing, equity, self.symbol)
-        if lots <= 0:
-            blocked["insufficient_equity"] += 1
-            return None
-
-        raw = float(open_[i])
-        # a BUY pays the ask, a SELL collects the bid
-        entry_price = raw + spread_price[i] if direction > 0 else raw
-        value = money_per_point(self.symbol, lots)
-
-        # entries are always executed one bar after the signal, so i - 1 is the
-        # bar whose close decided this trade
-        signal_bar = i - 1
-        stop_distance, stop_ready = self._exit_distance(
-            self.strategy.exit.stop_loss, entry_price, signal_bar, indicators
-        )
-        target_distance, target_ready = self._exit_distance(
-            self.strategy.exit.take_profit, entry_price, signal_bar, indicators
-        )
-        if not (stop_ready and target_ready):
-            blocked["exit_indicator_warmup"] += 1
-            return None
-
-        stop_level = target_level = None
-        if stop_distance is not None:
-            stop_level = (
-                entry_price - stop_distance if direction > 0 else entry_price + stop_distance
-            )
-        if target_distance is not None:
-            target_level = (
-                entry_price + target_distance if direction > 0 else entry_price - target_distance
-            )
-
-        risk_money = (stop_distance / self.symbol.point * value) if stop_distance else 0.0
-        state.register_entry(times[i], self.server_tz)
-        return _Position(
-            direction=direction,
-            entry_index=i,
-            entry_time=times[i],
-            entry_price=entry_price,
-            entry_raw=raw,
-            lots=lots,
-            value_per_point=value,
-            stop_level=stop_level,
-            target_level=target_level,
-            entry_spread_points=float(spread_points[i]),
-            risk_money=risk_money,
-        )
-
-    # -- exits -----------------------------------------------------------
-
-    def _check_levels(
-        self,
-        position: _Position,
-        i: int,
-        open_: np.ndarray,
-        high: np.ndarray,
-        low: np.ndarray,
-        spread_price: np.ndarray,
-    ) -> tuple[float, ExitReason, bool] | None:
-        """Stop/target on bar i, priced on the correct side of the book."""
-        if position.stop_level is None and position.target_level is None:
-            return None
-
-        if position.direction > 0:
-            # a long exits on the bid: the raw feed prices are already right
-            bar_open, bar_high, bar_low = open_[i], high[i], low[i]
-            stop_hit_open = position.stop_level is not None and bar_open <= position.stop_level
-            target_hit_open = position.target_level is not None and bar_open >= position.target_level
-            stop_hit = position.stop_level is not None and bar_low <= position.stop_level
-            target_hit = position.target_level is not None and bar_high >= position.target_level
-        else:
-            # a short exits on the ask: bid + this bar's spread
-            offset = spread_price[i]
-            bar_open, bar_high, bar_low = open_[i] + offset, high[i] + offset, low[i] + offset
-            stop_hit_open = position.stop_level is not None and bar_open >= position.stop_level
-            target_hit_open = position.target_level is not None and bar_open <= position.target_level
-            stop_hit = position.stop_level is not None and bar_high >= position.stop_level
-            target_hit = position.target_level is not None and bar_low <= position.target_level
-
-        # gap at the open: the fill is at the price that exists, not the level
-        if stop_hit_open:
-            return float(bar_open), "gap_stop_loss", False
-        if target_hit_open:
-            return float(bar_open), "gap_take_profit", False
-        if stop_hit and target_hit:
-            # without tick data there is no way to know which came first: assume
-            # the worse one and flag the trade
-            return float(position.stop_level), "stop_loss", True
-        if stop_hit:
-            return float(position.stop_level), "stop_loss", False
-        if target_hit:
-            return float(position.target_level), "take_profit", False
-        return None
-
-    def _close(
-        self,
-        position: _Position,
-        i: int,
-        exit_price: float,
-        exit_spread_price: float,
-        reason: ExitReason,
-        times: np.ndarray,
-        ordinals: np.ndarray,
-        spread_points: np.ndarray,
-        ambiguous: bool = False,
-    ) -> dict[str, object]:
-        exit_time = times[i]
-        # "raw" (bid) price, to isolate gross pnl from the spread cost
-        exit_raw = exit_price if position.direction > 0 else exit_price - exit_spread_price
-        gross = (
-            position.direction
-            * (exit_raw - position.entry_raw)
-            / self.symbol.point
-            * position.value_per_point
-        )
-        # a long pays the spread on entry, a short on exit
-        spread_paid = (
-            position.entry_spread_points
-            if position.direction > 0
-            else float(spread_points[i])
-        )
-        spread_cost = spread_paid * position.value_per_point
-        commission = self.config.costs.commission.round_turn(position.lots)
-        swap = self.config.costs.swap.charge(
-            self.symbol, position.direction, position.lots,
-            position.entry_time, exit_time, self.server_tz,
-        )
-        net = gross - spread_cost - commission + swap
-
-        bars_held = i - position.entry_index
-        session_bars = int(ordinals[i] - ordinals[position.entry_index])
-
-        return {
-            "direction": position.direction,
-            "entry_time": position.entry_time,
-            "entry_price": position.entry_price,
-            "stop_level": position.stop_level if position.stop_level is not None else np.nan,
-            "target_level": position.target_level if position.target_level is not None else np.nan,
-            "exit_time": exit_time,
-            "exit_price": exit_price,
-            "exit_reason": reason,
-            "lots": position.lots,
-            "bars_held": bars_held,
-            "session_bars_held": session_bars,
-            "gross_pnl": gross,
-            "spread_points": spread_paid,
-            "spread_cost": spread_cost,
-            "commission": commission,
-            "swap": swap,
-            "net_pnl": net,
-            "risk_money": position.risk_money,
-            "r_multiple": net / position.risk_money if position.risk_money else np.nan,
-            "ambiguous": ambiguous,
-            "crossed_gap": session_bars > bars_held,
-        }
-
-    # -- equity ----------------------------------------------------------
-
-    def _floating(
-        self, position: _Position | None, close_price: float, spread_price: float
-    ) -> float:
-        if position is None:
-            return 0.0
-        # the feed close is a bid: it is already the raw price for both sides
-        gross = (
-            position.direction
-            * (close_price - position.entry_raw)
-            / self.symbol.point
-            * position.value_per_point
-        )
-        spread_paid = (
-            position.entry_spread_points
-            if position.direction > 0
-            else spread_price / self.symbol.point
-        )
-        commission = self.config.costs.commission.round_turn(position.lots)
-        return gross - spread_paid * position.value_per_point - commission
+            for i in range(len(bars))
+        ]
 
     # -- diagnostics -----------------------------------------------------
 

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from datetime import datetime, timezone, tzinfo
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -62,7 +63,14 @@ class SymbolResolver:
         target = self._symbol_dir(symbol) / SPEC_CACHE_FILE
         if not target.exists():
             return None
-        payload = json.loads(target.read_text(encoding="utf-8"))
+        try:
+            payload = json.loads(target.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError) as exc:
+            # An unreadable copy is the same as no copy: the terminal is asked
+            # again. Raising here would let one damaged file take down every
+            # listing that walks the cache.
+            logger.warning("%s unreadable (%s): treating it as absent", target, exc)
+            return None
         if "spec" in payload and "read_at" in payload:
             return SymbolSpecSnapshot.from_dict(payload)
         # pre-A1 cache file: a bare SymbolSpec dict with no read timestamp.
@@ -72,11 +80,18 @@ class SymbolResolver:
         return SymbolSpecSnapshot(spec=SymbolSpec(**payload), read_at=read_at)
 
     def _store_spec(self, snapshot: SymbolSpecSnapshot) -> None:
+        """Writes the spec atomically.
+
+        `refresh()` rewrites several hundred of these while the dashboard is
+        reading them; a plain write leaves a window in which a reader sees an
+        empty file, and the request that hit that window returned a 500.
+        """
         folder = self._symbol_dir(snapshot.spec.name)
         folder.mkdir(parents=True, exist_ok=True)
-        (folder / SPEC_CACHE_FILE).write_text(
-            json.dumps(snapshot.to_dict(), indent=2), encoding="utf-8"
-        )
+        target = folder / SPEC_CACHE_FILE
+        staging = target.with_suffix(".json.tmp")
+        staging.write_text(json.dumps(snapshot.to_dict(), indent=2), encoding="utf-8")
+        os.replace(staging, target)
 
     def _stored_timezone(self) -> tzinfo | None:
         target = self.cache.root / TZ_CACHE_FILE
@@ -147,8 +162,9 @@ class SymbolResolver:
                 f"server timezone unavailable: the MT5 terminal is not "
                 f"responding and the cache does not hold one ({exc})"
             ) from exc
+        # set by `refresh`, which mypy cannot see through
         assert self._tz is not None
-        return self._tz
+        return self._tz  # type: ignore[unreachable]
 
 
 def cached_years(cache: ParquetCache, symbol: str, timeframe: Timeframe) -> list[int]:
@@ -170,7 +186,7 @@ def load_bars(
     if not years:
         raise DataUnavailable(
             f"no cached data for {symbol} {timeframe.name}. "
-            f"Download it with examples.download_year."
+            f"{_where_to_get_it(cache, symbol)}"
         )
     if start is not None:
         years = [y for y in years if y >= start.year]
@@ -191,6 +207,61 @@ def load_bars(
         raise DataUnavailable(
             f"no bars for {symbol} {timeframe.name} between {start} and {end}"
         )
+    return bars
+
+
+def _where_to_get_it(cache: ParquetCache, symbol: str) -> str:
+    """What to do about a missing instrument, which depends on the cache.
+
+    On the synthetic fixture "download it" is the wrong advice: there is
+    nothing to download, and the strategy specs in `strategies/` name real
+    broker instruments the fixture does not have. Saying which symbols exist
+    is more use than repeating a command that cannot work here.
+    """
+    from core.data.fixture_provider import FIXTURE_CACHE, INSTRUMENTS
+
+    if cache.root.resolve() == FIXTURE_CACHE.resolve():
+        available = ", ".join(INSTRUMENTS)
+        return (
+            f"This backend is serving the synthetic fixture, which only holds "
+            f"{available} - {symbol} is a real broker instrument and is not in "
+            f"it. Change the symbol to one of those, or point the backend at a "
+            f"data_cache/ with real bars."
+        )
+    return "Download it with examples.download_year."
+
+
+# Where `load_bars_for_run` leaves the spread coverage for `execute_run`.
+SPREAD_COVERAGE_ATTR = "spread_coverage"
+
+
+def load_bars_for_run(cache: ParquetCache, config: RunConfig) -> pd.DataFrame:
+    """The bars a run will execute on, with an honest per-bar spread or none.
+
+    `load_bars` returns what the cache holds: above M1 that is a
+    `min_spread_m1` column, the minimum of the M1 spreads inside each bar,
+    which the cost model refuses to charge. When the run asks for a per-bar
+    spread anyway, this is where the real one is rebuilt, from the M1 sample
+    of the same period. When that sample is missing the run does not start.
+
+    Every path that executes a spec goes through here, which is the point:
+    the refusal is not a warning somebody can decide to read. It is also why
+    the spread coverage is measured here - one place, and no run can be
+    stored without it.
+    """
+    from core.data.spread import attach, coverage
+
+    bars = load_bars(cache, config.symbol, config.tf, config.start, config.end)
+    if config.spread_mode in ("per_bar", "quantile"):
+        bars = attach(
+            cache, config.symbol, config.tf, bars, config.per_bar_spread_quantile
+        )
+    # ride along on the frame rather than through three call signatures: the
+    # object handed to `execute_run` is this one, and `SPREAD_COVERAGE_ATTR`
+    # is the only key anything reads out of `.attrs`
+    bars.attrs[SPREAD_COVERAGE_ATTR] = coverage(
+        cache, config.symbol, config.tf, pd.DatetimeIndex(bars.index)
+    )
     return bars
 
 
@@ -236,14 +307,16 @@ def execute_run(
             ),
         )
         strategy_report = compute_metrics(
-            result.trades, result.equity, result.timeframe, config.initial_equity, spec.id
+            result.trades, result.equity, result.timeframe, config.initial_equity,
+            spec.id, server_tz=server_tz,
         )
         benchmark = buy_and_hold(
             bars, symbol_spec.spec, spec.sizing, result.timeframe,
             config.initial_equity, costs, server_tz,
         )
         return store.finish_run(
-            run_id, result, strategy_report, benchmark, spec, symbol_spec.spec
+            run_id, result, strategy_report, benchmark, spec, symbol_spec.spec,
+            spread_coverage=bars.attrs.get(SPREAD_COVERAGE_ATTR),
         )
     except Exception as exc:
         store.fail_run(run_id, f"{type(exc).__name__}: {exc}")
@@ -271,7 +344,9 @@ def run_edge_gate(
         spread=costs.spread,
         min_observations=min_observations or DEFAULT_MIN_OBSERVATIONS,
     )
-    avg_spread = float(costs.spread.series(bars).mean()) if len(bars) else None
+    avg_spread = (
+        float(costs.spread.series(bars, config.tf).mean()) if len(bars) else None
+    )
     # ATR and percent exits have no single distance: the ambiguity estimate
     # already measured the average the strategy would have placed, and the
     # break-even prior is stated over that same average

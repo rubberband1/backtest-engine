@@ -88,3 +88,51 @@ def test_broker_datetime_is_tz_aware_with_server_clock() -> None:
     assert marker.tzinfo is timezone.utc
     assert marker.replace(tzinfo=None) == utc_to_server_naive(moment, ATHENS)
     assert marker.hour == 13  # server wall clock, not real UTC
+
+
+def test_a_stale_tick_cannot_name_a_timezone() -> None:
+    """The measurement is of two simultaneous instants, or it is of nothing.
+
+    Measured on this broker with the market closed: the last XAUUSD.r tick
+    carried the session's closing wall clock, 23:59:59 on an Athens server
+    (UTC+3). Fifty minutes after the close that reads as an offset of 2h09,
+    which rounds to UTC+2 and resolves to Europe/Berlin - a real zone, an
+    hour from the right one, in the value the session calendar, the swap
+    accounting and every historical conversion are built on.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    from core.data.servertime import (
+        offset_is_measurable,
+        offset_residual,
+        quantize_offset,
+        raw_offset,
+    )
+
+    reference = datetime(2026, 9, 4, 21, 50, 41, tzinfo=timezone.utc)
+    stale = datetime(2026, 9, 4, 23, 59, 59)  # the last tick of the session
+
+    raw = raw_offset(stale, reference)
+    assert quantize_offset(raw) == timedelta(hours=2), "the trap this guards"
+    assert not offset_is_measurable(raw)
+    assert offset_residual(raw) > timedelta(minutes=2)
+
+    # the same server, measured against a fresh tick, is unambiguous
+    fresh = reference.astimezone(timezone.utc).replace(tzinfo=None) + timedelta(
+        hours=3, seconds=1
+    )
+    live = raw_offset(fresh, reference)
+    assert offset_is_measurable(live)
+    assert quantize_offset(live) == timedelta(hours=3)
+
+
+def test_network_latency_still_measures_cleanly() -> None:
+    """A second or two of latency must not make a live tick unusable."""
+    from datetime import datetime, timedelta, timezone
+
+    from core.data.servertime import offset_is_measurable, raw_offset
+
+    reference = datetime(2026, 6, 1, 12, 0, 0, tzinfo=timezone.utc)
+    for lag in (timedelta(0), timedelta(seconds=2), timedelta(seconds=45)):
+        tick = datetime(2026, 6, 1, 15, 0, 0) - lag
+        assert offset_is_measurable(raw_offset(tick, reference)), lag

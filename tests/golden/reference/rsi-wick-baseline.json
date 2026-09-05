@@ -10,7 +10,8 @@
     "spread_value": null,
     "commission_per_lot_per_side": 0.0,
     "swap_mode": "points",
-    "session_threshold": 0.5
+    "session_threshold": 0.5,
+    "per_bar_spread_quantile": 0.5
   },
   "symbol_spec": {
     "name": "XAUUSD.r",
@@ -3172,7 +3173,8 @@
       }
     }
   },
-  "engine_version": "3.2.0",
-  "generated_at": "2026-09-02T23:26:38.541539+00:00",
-  "note": "Phase 5A: trades now record the stop and target levels they were actually placed at (ATR and percent exits cannot be reconstructed from the spec afterwards). Verified before regenerating: 268 differences against the 3.1.0 reference, all of them the two new fields, zero changes to any computed value."
+  "engine_version": "4.0.0",
+  "generated_at": "2026-09-04T21:13:09.624309+00:00",
+  "note": "Phase 7 A2: session bars are counted on the server clock instead of UTC, so a DST change no longer shifts the weekly slot grid the time stop counts on. The baseline does not move: 134 trades, final equity 89.60059376, every trade and every metric identical to the 3.2.0 reference, because none of its trades exits on the time stop and the inferred slot count per week (6893) is the same on both clocks. Regenerated to record that the check was made and came back empty, and to stamp engine 4.0.0.",
+  "symbol_spec_source": "replayed from the existing reference"
 }

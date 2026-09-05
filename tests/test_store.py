@@ -6,7 +6,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-import pandas as pd
 import pytest
 
 from core.runs.runner import execute_run, plan_run
@@ -15,7 +14,6 @@ from core.runs.store import (
     RunConfig,
     RunNotFound,
     RunStore,
-    compute_run_id,
     data_fingerprint,
 )
 from tests.conftest_engine import random_walk, spec_from, symbol_spec, symbol_spec_snapshot

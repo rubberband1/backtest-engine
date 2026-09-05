@@ -16,6 +16,12 @@ The YAML holds what changes between campaigns and nothing else:
 
 `strategies` also accepts a directory or a glob, in which case every spec in
 it is screened.
+
+`prior_report` points at an earlier campaign's JSON. The research is one
+search whether or not it was run in one sitting, so its attempts and its
+observed Sharpes are carried into the multiple-testing panel instead of the
+count restarting at zero - which would make every rerun look less corrected
+than the one before it.
 """
 from __future__ import annotations
 
@@ -50,6 +56,27 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--csv", type=Path, default=None, help="write the table here")
     parser.add_argument("--cache-dir", type=Path, default=Path("data_cache"))
     parser.add_argument("--runs-dir", type=Path, default=Path("runs"))
+    parser.add_argument(
+        "--prior",
+        type=Path,
+        default=None,
+        help="earlier campaign JSON whose attempts continue into this one",
+    )
+    parser.add_argument(
+        "--manifest",
+        type=Path,
+        default=None,
+        help="write the frozen inputs here. Without one a campaign cannot be "
+        "re-run against the same instrument specs, because tick_value moves",
+    )
+    parser.add_argument(
+        "--from-manifest",
+        type=Path,
+        default=None,
+        help="re-run a campaign against the inputs frozen in this manifest. "
+        "The YAML is then only used for the paths, and every setting that "
+        "changes a number comes from the manifest",
+    )
     parser.add_argument("--log-level", default="INFO")
     return parser.parse_args()
 
@@ -81,6 +108,70 @@ def moment(value: Any) -> datetime | None:
     return datetime.fromisoformat(str(value)).replace(tzinfo=timezone.utc)
 
 
+def carry_over(path: Path | None, min_trades: int) -> tuple[int, list[float]]:
+    """Attempts and observed Sharpes from an earlier campaign on this search.
+
+    Only cells that were actually tested are carried: an earlier campaign's
+    refusals were not experiments either. And only Sharpes from cells with
+    enough trades feed the variance, for the same reason they do in this
+    campaign - a per-trade Sharpe over two trades is a ratio, not an estimate.
+    """
+    if path is None:
+        return 0, []
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    cells = [c for c in payload.get("cells", []) if c.get("counts_as_attempt", True)]
+    sharpes = [
+        float(c["sharpe_per_trade"])
+        for c in cells
+        if c.get("sharpe_per_trade") is not None
+        and (c.get("trades") or 0) >= min_trades
+    ]
+    logger.info(
+        "carrying over %d attempts and %d observed Sharpes from %s",
+        len(cells), len(sharpes), path,
+    )
+    return len(cells), sharpes
+
+
+def _manifest_lines(report: ScreenReport) -> list[str]:
+    """What the campaign was run against, in the report itself.
+
+    A campaign's numbers are only comparable with another campaign's if both
+    were handed the same contracts. Printing the freeze date and the cost
+    fields makes that checkable from the report alone, rather than requiring
+    someone to remember when it ran.
+    """
+    payload = report.manifest
+    if not payload:
+        return [
+            "--- INPUTS ---",
+            "no manifest: this campaign did not freeze its instrument specs, so",
+            "re-running it need not reproduce it and the difference cannot be",
+            "attributed to the engine",
+            "",
+        ]
+
+    from core.research.manifest import CampaignManifest
+
+    manifest = CampaignManifest.from_dict(payload)
+    lines = [
+        "--- INPUTS (frozen) ---",
+        f"manifest frozen at {manifest.created_at.isoformat()} "
+        f"by engine {manifest.engine_version}",
+        f"instrument specs pinned for {len(manifest.symbol_specs)} of "
+        f"{len(manifest.symbols)} symbols; server clock "
+        f"{manifest.server_timezone}",
+    ]
+    for symbol, values in manifest.cost_fields().items():
+        lines.append(
+            f"  {symbol:<12} tick_value={values['tick_value']:.10f}  "
+            f"swap {values['swap_long']}/{values['swap_short']}  "
+            f"read {values['read_at'][:19]}"
+        )
+    lines.append("")
+    return lines
+
+
 def render(report: ScreenReport) -> str:
     """The table and the trial panel, in the terminal."""
     frame = as_frame(report)
@@ -93,10 +184,30 @@ def render(report: ScreenReport) -> str:
         f"elapsed    : {report.elapsed_seconds:.1f}s",
         "",
     ]
+    lines += _manifest_lines(report)
+
+    table = report.tradability
+    if table:
+        lines += [
+            f"--- STAGE ZERO: TRADABILITY ({table['tradable']} testable, "
+            f"{table['excluded']} refused, {table['unjudged']} unjudged) ---",
+            f"a cell is refused when the spread exceeds {table['max_ratio']:.0%} of "
+            f"one ATR({table['atr_period']}); refused cells are not counted as "
+            f"attempts",
+        ]
+        for cell in table["cells"]:
+            if cell["tradable"] and cell["judged"]:
+                continue
+            lines.append(
+                f"  {cell['symbol']:<10} {cell['timeframe']:<4} "
+                f"{'REFUSED' if not cell['tradable'] else 'unjudged'}: {cell['reason']}"
+            )
+        lines.append("")
 
     header = (
         f"{'strategy':<24} {'symbol':<9} {'tf':<4} {'stage':<12} {'signals':>7} "
-        f"{'trades':>7} {'net':>9} {'sharpe/t':>9} {'meanR':>7} {'amb%':>6} {'perm p':>7}"
+        f"{'trades':>7} {'net':>9} {'sharpe/t':>9} {'meanR':>7} {'gates%':>7} "
+        f"{'spread':>7} {'perm p':>7}"
     )
     lines.append(header)
     lines.append("-" * len(header))
@@ -109,7 +220,9 @@ def render(report: ScreenReport) -> str:
             f"{row['stage_reached']:<12} {num(row['gate_signals'], '7.0f')} "
             f"{num(row['trades'], '7.0f')} {num(row['net_pnl'], '9.2f')} "
             f"{num(row['sharpe_per_trade'], '9.4f')} {num(row['mean_r'], '7.3f')} "
-            f"{num(row['ambiguous_share'], '6.1%')} "
+            f"{num(row.get('gate_rejected_share'), '6.0%')}"
+            f"{'!' if row.get('gates_materially_altered') else ' '} "
+            f"{num(row.get('spread_charged_median'), '7.1f')} "
             f"{num(row['permutation_p_value'], '7.4f')}"
         )
 
@@ -169,6 +282,21 @@ def main() -> None:
         **config_kwargs,
     )
 
+    min_trades = int(payload.get("min_trades", 30))
+    prior_attempts, prior_sharpes = carry_over(
+        args.prior
+        or (Path(payload["prior_report"]) if "prior_report" in payload else None),
+        min_trades,
+    )
+
+    manifest = None
+    if args.from_manifest:
+        from core.research.manifest import CampaignManifest
+
+        manifest = CampaignManifest.read(args.from_manifest)
+        logger.info("re-running from %s", args.from_manifest)
+        print(manifest.summary())
+
     report = run_screen(
         strategies=strategies,
         symbols=payload["symbols"],
@@ -176,11 +304,20 @@ def main() -> None:
         base_config=base_config,
         cache_dir=args.cache_dir,
         runs_dir=args.runs_dir,
-        min_trades=int(payload.get("min_trades", 30)),
+        min_trades=min_trades,
         permutation_iterations=int(payload.get("permutation_iterations", 200)),
+        prior_attempts=prior_attempts,
+        prior_sharpes=prior_sharpes,
+        manifest=manifest,
     )
 
     print(render(report))
+
+    if args.manifest and report.manifest:
+        from core.research.manifest import CampaignManifest
+
+        written = CampaignManifest.from_dict(report.manifest).write(args.manifest)
+        logger.info("manifest written to %s", written)
 
     if args.json:
         args.json.parent.mkdir(parents=True, exist_ok=True)

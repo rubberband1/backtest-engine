@@ -32,6 +32,12 @@ export type CompareResponse = S["CompareResponse"];
 export type CompareMetricRow = S["CompareMetricRow"];
 export type CompareConfigRow = S["CompareConfigRow"];
 export type ValidateResponse = S["ValidateResponse"];
+export type Vocabulary = S["VocabularyOut"];
+export type IndicatorDef = S["IndicatorOut"];
+export type ParamDef = S["ParamOut"];
+export type SaveStrategyResponse = S["SaveStrategyResponse"];
+export type Preview = S["PreviewResponse"];
+export type AttemptsPanel = S["AttemptsPanelOut"];
 export type RunStatus = S["RunSummaryOut"]["status"];
 
 export type WalkForwardResponse = S["WalkForwardResponse"];
@@ -52,6 +58,16 @@ export type Uncertainty = S["UncertaintyOut"];
 export type Gates = S["GatesOut"];
 export type GateRow = S["GateRowOut"];
 export type AmbiguityPrior = S["AmbiguityPriorOut"];
+export type Tradability = S["TradabilityOut"];
+export type TradabilityCell = S["TradabilityCellOut"];
+
+export type LiveSession = S["LiveSessionOut"];
+export type LiveDetail = S["LiveDetailOut"];
+export type LiveEvent = S["LiveEventOut"];
+export type LiveTrade = S["LiveTradeOut"];
+export type LiveComparison = S["LiveComparisonOut"];
+export type TradeDeviation = S["TradeDeviationOut"];
+export type UnmatchedTrade = S["UnmatchedTradeOut"];
 
 /** A grid is a free-form map of dotted spec paths to the values to try. */
 export type ParameterGrid = Record<string, unknown[]>;
@@ -117,10 +133,28 @@ export const api = {
   strategies: () => request<Strategy[]>("/api/strategies"),
   validate: (spec: unknown) => post<ValidateResponse>("/api/strategies/validate", { spec }),
 
+  // The editor renders what the registry declares and nothing else: a second
+  // copy of this list in the frontend is how a spec becomes valid on screen
+  // and invalid on the server.
+  vocabulary: () => request<Vocabulary>("/api/vocabulary"),
+  saveStrategy: (spec: unknown, overwrite = false) =>
+    post<SaveStrategyResponse>("/api/strategies", { spec, overwrite }),
+
+  // What the strategy is about to cost, before any backtest is run.
+  preview: (body: { spec?: unknown; strategy_id?: string; config: RunConfigIn }) =>
+    post<Preview>("/api/strategies/preview", body),
+
   edge: (body: { strategy_id: string; config: RunConfigIn; horizons?: number[] }) =>
     post<EdgeReport>("/api/edge", body),
-  backtest: (body: { strategy_id: string; config: RunConfigIn; force?: boolean }) =>
-    post<BacktestResponse>("/api/backtest", body),
+  // `spec` sends an unsaved strategy straight from the editor. It is counted
+  // in the campaign like every other attempt: there is deliberately no path
+  // that runs a backtest without registering it.
+  backtest: (body: {
+    strategy_id?: string;
+    spec?: unknown;
+    config: RunConfigIn;
+    force?: boolean;
+  }) => post<BacktestResponse>("/api/backtest", body),
 
   runs: (params: { symbol?: string; strategy_id?: string; limit?: number } = {}) => {
     const query = new URLSearchParams();
@@ -189,4 +223,28 @@ export const api = {
     permutation_iterations?: number;
   }) => post<ScreenJob>("/api/screen", body),
   screenJob: (jobId: string) => request<ScreenJob>(`/api/screen/${jobId}`),
+
+  // Stage zero of the funnel: what the broker's spread makes untestable.
+  tradability: (params: { symbols?: string[]; timeframes?: string[] } = {}) => {
+    const query = new URLSearchParams();
+    if (params.symbols?.length) query.set("symbols", params.symbols.join(","));
+    if (params.timeframes?.length) query.set("timeframes", params.timeframes.join(","));
+    const suffix = query.toString();
+    return request<Tradability>(`/api/tradability${suffix ? `?${suffix}` : ""}`);
+  },
+
+  // -- the live runner ---------------------------------------------------
+
+  // The backend does not run the runner: it reads the diaries that
+  // `scripts.run_live` writes, so opening this page cannot disturb a
+  // strategy that is trading.
+  liveSessions: () => request<LiveSession[]>("/api/live"),
+  liveSession: (sessionId: string, events = 100) =>
+    request<LiveDetail>(
+      `/api/live/${encodeURIComponent(sessionId)}?events=${events}`,
+    ),
+  liveComparison: (sessionId: string) =>
+    request<LiveComparison>(
+      `/api/live/${encodeURIComponent(sessionId)}/comparison`,
+    ),
 };

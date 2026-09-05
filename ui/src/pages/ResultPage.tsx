@@ -116,6 +116,9 @@ export function ResultPage({ runId }: { runId: string }) {
               <BreakevenPanel breakeven={run.breakeven} realized={strategy?.win_rate ?? null} />
             )}
             <ExecutionPanel run={run} />
+            {run.spread_coverage && (
+              <SpreadCoveragePanel coverage={run.spread_coverage} />
+            )}
             {run.gates && <GatesPanel gates={run.gates} />}
             <SymbolSpecPanel run={run} />
           </div>
@@ -123,6 +126,62 @@ export function ResultPage({ runId }: { runId: string }) {
       </div>
       <TradesPanel runId={runId} />
     </div>
+  );
+}
+
+function SpreadCoveragePanel({
+  coverage,
+}: {
+  coverage: NonNullable<RunDetail["spread_coverage"]>;
+}) {
+  const share = coverage.measured_share;
+  // Not a quality score: a run at 0% is not wrong, it is resting on a cost
+  // taken from another period. The label says which, and never the colour
+  // alone.
+  const kind = coverage.fully_measured ? "ok" : share > 0 ? "warn" : "bad";
+  const label = coverage.fully_measured
+    ? "measured throughout"
+    : share > 0
+      ? "partly assumed"
+      : "assumed throughout";
+
+  return (
+    <Panel title="Spread: measured or assumed" aside={<Badge kind={kind}>{label}</Badge>}>
+      <div className="stack">
+        <div className="pair">
+          <div>
+            <div className="label">Bars with an M1 sample</div>
+            <div className="value">{pct(share)}</div>
+            <div className="sub">
+              {int(coverage.measured_bars)} of {int(coverage.bars)}
+            </div>
+          </div>
+          <div>
+            <div className="label">Bars on an assumed spread</div>
+            <div className="value">{int(coverage.assumed_bars)}</div>
+            <div className="sub">charged a constant from another period</div>
+          </div>
+        </div>
+
+        <dl className="facts">
+          <dt>M1 window</dt>
+          <dd>
+            {coverage.m1_window_start && coverage.m1_window_end
+              ? `${utcDate(coverage.m1_window_start)} → ${utcDate(coverage.m1_window_end)}`
+              : "none cached for this period"}
+          </dd>
+        </dl>
+
+        <p className="footnote">
+          Above M1 the broker's spread field is the minimum of the M1 spreads
+          inside the bar, so it is never charged. Where M1 exists the spread is
+          rebuilt from it; everywhere else a measured constant is applied to
+          bars it was not measured on. That is an assumption, and on the oldest
+          part of a sample it is the assumption most able to move a marginal
+          result.
+        </p>
+      </div>
+    </Panel>
   );
 }
 

@@ -121,7 +121,8 @@ def main() -> None:
     result = run_backtest(strategy, bars, symbol_spec, server_tz, config)
 
     strategy_report = compute_metrics(
-        result.trades, result.equity, result.timeframe, args.equity, strategy.id
+        result.trades, result.equity, result.timeframe, args.equity, strategy.id,
+        server_tz=server_tz,
     )
     benchmark = buy_and_hold(
         bars, symbol_spec, strategy.sizing, result.timeframe, args.equity, costs, server_tz

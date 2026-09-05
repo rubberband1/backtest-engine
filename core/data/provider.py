@@ -7,11 +7,12 @@ interface and binding for every future provider.
 from __future__ import annotations
 
 import abc
+from collections.abc import Sequence
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from enum import Enum
 from types import TracebackType
-from typing import Sequence
+from typing import Any
 
 import pandas as pd
 
@@ -26,6 +27,46 @@ BAR_COLUMNS: tuple[str, ...] = (
 )
 
 TICK_COLUMNS: tuple[str, ...] = ("bid", "ask", "last", "volume")
+
+# The name a bar's spread field is allowed to carry, per timeframe.
+#
+# On M1 the field is a spread. Above M1 the terminal reports the **minimum**
+# of the spreads of the M1 bars inside the period - measured at 100% on three
+# instruments over more than four thousand periods each (`core.data.spread`).
+# Two different quantities must not share one name: a column called `spread`
+# gets charged as a fill cost sooner or later, and above M1 that charges the
+# best price of the bar. So above M1 the raw column is called what it is, and
+# a `spread` column at those timeframes exists only when something honest put
+# it there (`core.data.spread.reconstruct_from_m1`).
+SPREAD_COLUMN = "spread"
+MIN_SPREAD_M1_COLUMN = "min_spread_m1"
+
+
+def spread_column_for(timeframe: Timeframe | str) -> str:
+    """The name the feed's spread field carries at this timeframe."""
+    return (
+        SPREAD_COLUMN
+        if Timeframe.parse(timeframe).minutes <= 1
+        else MIN_SPREAD_M1_COLUMN
+    )
+
+
+def rename_aggregated_spread(
+    frame: pd.DataFrame, timeframe: Timeframe | str
+) -> pd.DataFrame:
+    """Gives the raw spread field its honest name for `timeframe`.
+
+    Applied wherever bars enter the engine. Idempotent, and a no-op on M1.
+    """
+    target = spread_column_for(timeframe)
+    if target == SPREAD_COLUMN or SPREAD_COLUMN not in frame.columns:
+        return frame
+    if target in frame.columns:
+        # both names present: the `spread` column was put there deliberately
+        # (a reconstruction), and overwriting it with the raw minimum would be
+        # exactly the substitution this rename exists to prevent
+        return frame
+    return frame.rename(columns={SPREAD_COLUMN: target})
 
 
 class Timeframe(Enum):
@@ -61,7 +102,7 @@ class Timeframe(Enum):
         return f"{self.value}min"
 
     @classmethod
-    def parse(cls, value: "str | Timeframe") -> "Timeframe":
+    def parse(cls, value: str | Timeframe) -> Timeframe:
         if isinstance(value, cls):
             return value
         try:
@@ -124,10 +165,10 @@ class SymbolSpecSnapshot:
         return {"read_at": self.read_at.isoformat(), "spec": asdict(self.spec)}
 
     @classmethod
-    def from_dict(cls, payload: dict[str, object]) -> "SymbolSpecSnapshot":
+    def from_dict(cls, payload: dict[str, object]) -> SymbolSpecSnapshot:
         return cls(
-            spec=SymbolSpec(**payload["spec"]),  # type: ignore[arg-type]
-            read_at=datetime.fromisoformat(payload["read_at"]),  # type: ignore[arg-type]
+            spec=SymbolSpec(**payload["spec"]),
+            read_at=datetime.fromisoformat(payload["read_at"]),
         )
 
 
@@ -145,13 +186,13 @@ class DataProvider(abc.ABC):
     - incoming `start`/`end` are interpreted as UTC when naive.
     """
 
-    def connect(self) -> None:
+    def connect(self) -> None:  # noqa: B027 - optional hook, not abstract
         """Opens the connection. Stateless implementations do nothing."""
 
-    def disconnect(self) -> None:
+    def disconnect(self) -> None:  # noqa: B027 - optional hook, not abstract
         """Closes the connection."""
 
-    def __enter__(self) -> "DataProvider":
+    def __enter__(self) -> DataProvider:
         self.connect()
         return self
 
@@ -185,22 +226,45 @@ class DataProvider(abc.ABC):
     def get_ticks(self, symbol: str, start: datetime, end: datetime) -> pd.DataFrame:
         ...
 
+    # Optional: how far back the source goes. Not every provider can answer
+    # without downloading everything, so the base raises instead of guessing.
+    def probe_depth(self, symbol: str, timeframe: Timeframe | str) -> Any:
+        raise NotImplementedError(
+            f"{type(self).__name__} cannot report its history depth"
+        )
 
-def empty_bars() -> pd.DataFrame:
-    """Empty bars DataFrame, still conforming to the contract."""
+
+def bar_columns_for(timeframe: Timeframe | str) -> tuple[str, ...]:
+    """`BAR_COLUMNS` with the spread field named honestly for this timeframe."""
+    name = spread_column_for(timeframe)
+    return tuple(name if c == SPREAD_COLUMN else c for c in BAR_COLUMNS)
+
+
+def empty_frame(columns: Sequence[str]) -> pd.DataFrame:
     index = pd.DatetimeIndex([], tz="UTC", name="time")
-    return pd.DataFrame({c: pd.Series(dtype="float64") for c in BAR_COLUMNS}, index=index)
+    return pd.DataFrame({c: pd.Series(dtype="float64") for c in columns}, index=index)
+
+
+def empty_bars(timeframe: Timeframe | str | None = None) -> pd.DataFrame:
+    """Empty bars DataFrame, still conforming to the contract."""
+    return empty_frame(BAR_COLUMNS if timeframe is None else bar_columns_for(timeframe))
 
 
 def empty_ticks() -> pd.DataFrame:
-    index = pd.DatetimeIndex([], tz="UTC", name="time")
-    return pd.DataFrame({c: pd.Series(dtype="float64") for c in TICK_COLUMNS}, index=index)
+    return empty_frame(TICK_COLUMNS)
 
 
 def normalize_bars(frame: pd.DataFrame, columns: Sequence[str] = BAR_COLUMNS) -> pd.DataFrame:
-    """Sorts, deduplicates and enforces the common schema on a UTC frame."""
+    """Sorts, deduplicates and enforces the common schema on a UTC frame.
+
+    A column the caller did not ask for is dropped, and one it asked for and
+    the frame lacks is filled with zero. Both are dangerous around the spread
+    field - a dropped `min_spread_m1` silently becomes a `spread` of zero,
+    which is a free trade - so callers handling bars above M1 must pass
+    `bar_columns_for(timeframe)` rather than the default.
+    """
     if frame.empty:
-        return empty_bars() if tuple(columns) == BAR_COLUMNS else empty_ticks()
+        return empty_frame(columns)
     out = frame.sort_index()
     out = out[~out.index.duplicated(keep="last")]
     out.index.name = "time"

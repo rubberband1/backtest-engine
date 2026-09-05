@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pandas as pd
@@ -12,7 +12,13 @@ from core.data.cache import (
     split_by_year,
     subtract_intervals,
 )
-from core.data.provider import BAR_COLUMNS, Timeframe
+from core.data.provider import (
+    BAR_COLUMNS,
+    MIN_SPREAD_M1_COLUMN,
+    Timeframe,
+    rename_aggregated_spread,
+    spread_column_for,
+)
 
 TF = Timeframe.M1
 SYMBOL = "TEST.SYM"
@@ -193,10 +199,22 @@ def test_hole_without_data_stays_marked_covered(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize("timeframe", [Timeframe.M1, Timeframe.M15, Timeframe.H1])
 def test_parquet_roundtrip_preserves_utc_and_spread(tmp_path: Path, timeframe: Timeframe) -> None:
+    """The values survive the round trip; above M1 the name changes on purpose.
+
+    A `spread` column at M15 or H1 would be the minimum of the M1 spreads
+    inside the bar wearing the name of a cost. The cache is where that name
+    is corrected, so the round trip is expected to rename and not expected to
+    round-trip the header.
+    """
     cache = ParquetCache(tmp_path)
     bars = make_bars(utc(2024, 3, 1), utc(2024, 3, 2), timeframe)
     cache.write_year(SYMBOL, timeframe, 2024, bars, [(utc(2024, 3, 1), utc(2024, 3, 2))])
     back = cache.read_year(SYMBOL, timeframe, 2024)
     assert str(back.index.tz) == "UTC"
-    assert (back["spread"] == 3.0).all()
-    pd.testing.assert_frame_equal(back, bars, check_freq=False)
+
+    field = spread_column_for(timeframe)
+    assert field == ("spread" if timeframe is Timeframe.M1 else MIN_SPREAD_M1_COLUMN)
+    assert (back[field] == 3.0).all()
+    pd.testing.assert_frame_equal(
+        back, rename_aggregated_spread(bars, timeframe), check_freq=False
+    )
